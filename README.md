@@ -85,8 +85,9 @@ deps <- call_deps(out$combined, p_cutoff = 0.05, logfc_cutoff = 0.25)
 ```
 
 Per-method results are written to `out_dir/<Method>/`, and the consensus
-table to `out_dir/<name>__FinalCombinedPvalue_IntegratedMethods.csv`. See
-[Examples/example_R467W_vs_Mock.R](Examples/example_R467W_vs_Mock.R) for a
+table to `out_dir/<name>__FinalCombinedPvalue_IntegratedMethods.csv`. 
+
+See [Examples/example_R467W_vs_Mock.R](Examples/example_R467W_vs_Mock.R) for a
 complete, already-validated run.
 
 ## Key function contracts
