@@ -1,5 +1,7 @@
-# Demo: reproduce the NegKTS R467W Ind vs Mock Ind comparison through the
-# PLToolkit, for side-by-side comparison against the original monolithic Rmds.
+# Demo: NegKTSwt (wild-type, KTS-negative WT1) Ind vs Mock Ind comparison
+# through the PLToolkit. Uses wild-type WT1, unlike example_R467W_vs_Mock.R
+# (a pathogenic/deficient variant) - preferred as the toolkit's flagship
+# example since it reflects normal WT1 function rather than a disease variant.
 
 toolkit_dir <- "/Users/XXW004/Documents/Projects/MannNina/Project/WT1/scripts/PLToolkit"
 
@@ -8,8 +10,8 @@ for (f in list.files(file.path(toolkit_dir, "R"), pattern = "\\.R$", full.names 
 }
 
 spec <- comparison_spec(
-  name = "negtKTSwt_R467W_vs_Mock",
-  group1_name = "negtKTSwt_R467W_Ind", group1_cols = paste0("negtKTSwt_R467W_Ind_", 1:3),
+  name = "NegKTSwt_vs_Mock",
+  group1_name = "NegKTSwt_Ind", group1_cols = paste0("NegKTSwt_Ind_", 1:3),
   group2_name = "Mock_Ind", group2_cols = paste0("Mock_Ind_", 1:3),
   max_na = 3
 )
@@ -20,7 +22,7 @@ paths <- list(
   msstats_path = "/Users/XXW004/Documents/Projects/MannNina/Project/WT1/Preproceed/MSstats.csv",
   combined_peptide_path = "/Users/XXW004/Documents/Projects/MannNina/Project/WT1/Preproceed/combined_peptide.tsv",
   contaminant_list_path = NULL,
-  out_dir = "/Users/XXW004/Documents/Projects/MannNina/Project/WT1/Results/NegKTSR467WIndvsMockInd/PLToolkitDemo/"
+  out_dir = "/Users/XXW004/Documents/Projects/MannNina/Project/WT1/Results/NegKTSwtvsMockInd/PLToolkitDemo/"
 )
 
 out <- run_pl_dea(spec, paths)

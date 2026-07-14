@@ -97,13 +97,22 @@ paths <- list(
   out_dir                = "path/to/output/"
 )
 
-# 4. Run the full pipeline and call consensus DEPs
+# 4. Run the full pipeline - consensus DEPs are called automatically
 out  <- run_pl_dea(spec, paths)
-deps <- call_deps(out$combined, p_cutoff = 0.05, logfc_cutoff = 0.25)
+out$deps   # same as out$combined filtered by call_deps() with the opts$dep_* cutoffs
+
+# Or re-call with different cutoffs on the already-computed consensus table:
+deps <- call_deps(out$combined, p_col = "FinaladjP_FisherCorrected",
+                   logfc_cutoff = 0.25, min_methods = 3)
 ```
 
-Per-method results are written to `out_dir/<Method>/`, and the consensus
-table to `out_dir/<name>__FinalCombinedPvalue_IntegratedMethods.csv`. 
+Per-method results are written to `out_dir/<Method>/`, the normalized +
+imputed expression matrix to
+`out_dir/<name>__normalized_imputed_matrix.csv`, the consensus table to
+`out_dir/<name>__FinalCombinedPvalue_IntegratedMethods.csv`, and the final
+called DEPs to `out_dir/<name>__DEPs.csv` (using `opts$dep_p_col`/
+`dep_p_cutoff`/`dep_logfc_cutoff`/`dep_min_methods`, defaulting to
+correlation-corrected Fisher + logFC + ≥3-method consensus).
 
 See [Examples/example_R467W_vs_Mock.R](Examples/example_R467W_vs_Mock.R) for a
 complete, already-validated run.
@@ -121,9 +130,13 @@ complete, already-validated run.
 | `run_dep_package(intens_raw, spec)` | DEP-package-native pipeline (`make_se` → `filter_missval` → `normalize_vsn` → impute → `test_diff` → `get_results`). |
 | `run_proda(intens_tran, spec)` | proDA-based DEA on the log2-only (not quantile-normalized) matrix. |
 | `run_msstats(msstats_csv_path, spec)` | MSstats-based DEA, reading directly from the raw MSstats CSV rather than `combined_protein.csv`. |
-| `combine_pvalues(results_list, methods, id_col)` | Consensus scoring across methods: Fisher/Tippett/Stouffer/empirical-permutation p-value combination, BH-adjusted, plus `max_logFC` across methods. Default method set kept for continuity with the original script but is a parameter. |
-| `call_deps(combined, p_col, logfc_col, p_cutoff = 0.05, logfc_cutoff = 0.25)` | Adjusted-P and logFC cutoffs for calling consensus DEPs: `p<=p_cutoff & abs(logFC)>logfc_cutoff`. |
-| `run_pl_dea(spec, paths, options)` | Orchestrates the full pipeline, writes per-method CSVs, returns the consensus table. |
+| `combine_pvalues(results_list, methods, id_col)` | Consensus scoring across methods: Fisher/Tippett/Stouffer/empirical-permutation p-value combination (BH-adjusted) plus a correlation-corrected Fisher (Kost & McDermott) and per-protein vote counts (`n_methods_tested`/`n_methods_hit`), plus `max_logFC`. Plain Fisher/Tippett/Stouffer assume independent methods, which isn't true here (most share the same intensity matrix) — prefer `FinaladjP_FisherCorrected` or vote counting for calling. |
+| `call_deps(combined, p_col, logfc_col, p_cutoff = 0.05, logfc_cutoff = 0.25, min_methods = NULL)` | Adjusted-P and logFC cutoffs for calling consensus DEPs: `p<=p_cutoff & abs(logFC)>logfc_cutoff`. Defaults to plain Fisher for continuity; pass `p_col = "FinaladjP_FisherCorrected"` for the correlation-adjusted version. Optionally pass `min_methods` to also require ≥N individual methods to hit their own thresholds (`n_methods_hit`), combining the p-value and vote-counting approaches. |
+| `call_deps_vote(combined, min_methods = 3)` | Vote-counting-only alternative to `call_deps()`: calls a protein a DEP purely on ≥`min_methods` methods hitting their own thresholds, with no combined p-value/logFC requirement. |
+| `run_pl_dea(spec, paths, options)` | Orchestrates the full pipeline: writes the normalized+imputed matrix, per-method CSVs, the consensus table, and the called DEPs list (`__DEPs.csv`); returns all of them (`$dat_log_exp`, `$results`, `$combined`, `$deps`). |
+| `run_count_branch(pro_file_update, spec)` | SAINT-*inspired* (not the published SAINTexpress tool - a from-scratch reimplementation of the same idea) two-component negative-binomial mixture on spectral counts, EM-fit jointly across all proteins. Returns `P_count` (posterior probability of being a true interactor) and `count_logFC` per protein. |
+| `fuse_branches(count_results, intensity_combined)` | Fuses the count branch and intensity branch into one `Fused_Score` (naive-Bayes combination of both branches' posterior probabilities) plus a categorical `Evidence` tag (`Both`/`Count_only`/`Intensity_only`/`Neither`), each branch's positive call using its own threshold (`count_posterior >= count_cutoff` (0.75); `FinaladjP_FisherCorrected <= intensity_p_cutoff` (0.05) `& abs(max_logFC) > intensity_logfc_cutoff` (0.25)). |
+| `run_pl_interactome(spec, paths, options)` | Runs `run_pl_dea()` + `run_count_branch()` and fuses them (`fuse_branches()`) into `__FusedInteractomeScore.csv`. Re-writes `__DEPs.csv` as the *union* of the intensity-consensus DEPs and any `Evidence == "Count_only"` proteins (spectral-count-confirmed but not intensity-consensus-called - e.g. because MaxLFQ quantification is unreliable for proteins identified from only shared/non-unique peptides), each row tagged `Confidence`: `"High"` (`Both`), `"Count_only"`, or `"Standard"` (intensity-consensus DEP without count corroboration). |
 
 ## Directory layout
 

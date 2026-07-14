@@ -79,6 +79,39 @@ min_psm_for_comparison <- function(psm_expanded, sample_cols) {
   psm_expanded
 }
 
+#' Count peptides with nonzero raw intensity per protein (Gene) per sample,
+#' from FragPipe's combined_peptide.tsv - a QC signal for MaxLFQ intensity
+#' stability: when a protein is quantified from only 0-1 peptides in a given
+#' sample, MaxLFQ's cross-run ratio-based algorithm can produce an erratic
+#' value for that sample that doesn't track true abundance, even though the
+#' reported number looks unremarkable on its own.
+load_peptide_support <- function(combined_peptide_path, sample_cols) {
+  pep <- read.delim(combined_peptide_path, check.names = FALSE)
+  intensity_cols <- paste0(sample_cols, " Intensity")
+  missing <- setdiff(intensity_cols, colnames(pep))
+  if (length(missing) > 0) {
+    stop("Missing peptide intensity columns: ", paste(missing, collapse = ", "))
+  }
+  support <- pep %>%
+    group_by(Gene) %>%
+    summarise(across(all_of(intensity_cols), ~ sum(.x > 0, na.rm = TRUE)), .groups = "drop")
+  colnames(support) <- gsub(" Intensity$", "_n_peptides", colnames(support))
+  support
+}
+
+#' Minimum peptide-support count across a set of samples (e.g. one
+#' comparison's two groups) - the weakest link that could destabilize that
+#' protein's MaxLFQ intensity anywhere in this comparison.
+min_peptide_support_for_comparison <- function(support, sample_cols) {
+  cols <- paste0(sample_cols, "_n_peptides")
+  missing <- setdiff(cols, colnames(support))
+  if (length(missing) > 0) {
+    stop("Missing peptide-support columns: ", paste(missing, collapse = ", "))
+  }
+  support$min_peptides_per_sample <- apply(support[, cols, drop = FALSE], 1, min)
+  support
+}
+
 #' Thin wrapper around reading a FragPipe MSstats.csv export.
 load_msstats_raw <- function(path) {
   readr::read_csv(path, na = c("", "NA", "0"), show_col_types = FALSE)

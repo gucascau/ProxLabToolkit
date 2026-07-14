@@ -27,9 +27,15 @@ to_posterior <- function(pvalues) {
 #' relies on across its own 7 sub-methods) plus a categorical Evidence tag
 #' (Both / Count_only / Intensity_only / Neither) derived from each branch's
 #' own existing threshold, for interpretability.
+#' Defaults intensity_p_col to the correlation-corrected Fisher p-value
+#' (FinaladjP_FisherCorrected, see add_corrected_fisher() in consensus.R),
+#' matching call_deps()'s recommended default - the plain FinalP_Fisher is
+#' anti-conservative (see consensus.R), which previously let genes like
+#' KMT2C (significant only by spectral count, not by any individual
+#' intensity method) get mislabeled "Both" off a borderline plain-Fisher p.
 fuse_branches <- function(count_results, intensity_combined,
                             count_cutoff = 0.75,
-                            intensity_p_col = "FinalP_Fisher",
+                            intensity_p_col = "FinaladjP_FisherCorrected",
                             intensity_logfc_col = "max_logFC",
                             intensity_p_cutoff = 0.05,
                             intensity_logfc_cutoff = 0.25) {
