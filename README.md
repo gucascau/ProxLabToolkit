@@ -56,16 +56,38 @@ for that data.
 <img src="Figs/ProximalLabling.png" width="1500"/>
 
 
-## Comparison spec
+## Usage
 
 ```r
+# 1. Source the toolkit
+for (f in list.files("R", pattern = "\\.R$", full.names = TRUE)) source(f)
+
+# 2. Define the comparison (which sample columns make up each group)
 spec <- comparison_spec(
   name        = "negtKTSwt_R467W_vs_Mock",
   group1_name = "negtKTSwt_R467W_Ind", group1_cols = paste0("negtKTSwt_R467W_Ind_", 1:3),
   group2_name = "Mock_Ind",            group2_cols = paste0("Mock_Ind_", 1:3),
   max_na      = 3
 )
+
+# 3. Point at the input files (psm_dir/msstats_path/contaminant_list_path are optional)
+paths <- list(
+  combined_protein_path = "path/to/combined_protein.csv",
+  psm_dir                = "path/to/psm_dir/",
+  msstats_path           = "path/to/MSstats.csv",
+  contaminant_list_path  = NULL,
+  out_dir                = "path/to/output/"
+)
+
+# 4. Run the full pipeline and call consensus DEPs
+out  <- run_pl_dea(spec, paths)
+deps <- call_deps(out$combined, p_cutoff = 0.05, logfc_cutoff = 0.25)
 ```
+
+Per-method results are written to `out_dir/<Method>/`, and the consensus
+table to `out_dir/<name>__FinalCombinedPvalue_IntegratedMethods.csv`. See
+[Examples/example_R467W_vs_Mock.R](Examples/example_R467W_vs_Mock.R) for a
+complete, already-validated run.
 
 ## Key function contracts
 
@@ -81,7 +103,7 @@ spec <- comparison_spec(
 | `run_proda(intens_tran, spec)` | proDA-based DEA on the log2-only (not quantile-normalized) matrix. |
 | `run_msstats(msstats_csv_path, spec)` | MSstats-based DEA, reading directly from the raw MSstats CSV rather than `combined_protein.csv`. |
 | `combine_pvalues(results_list, methods, id_col)` | Consensus scoring across methods: Fisher/Tippett/Stouffer/empirical-permutation p-value combination, BH-adjusted, plus `max_logFC` across methods. Default method set kept for continuity with the original script but is a parameter. |
-| `call_deps(combined, p_col, logfc_col, ...)` | Standard `p<=0.05 & abs(logFC)>0.25` DEP-calling threshold. |
+| `call_deps(combined, p_col, logfc_col, p_cutoff = 0.05, logfc_cutoff = 0.25)` | Adjusted-P and logFC cutoffs for calling consensus DEPs: `p<=p_cutoff & abs(logFC)>logfc_cutoff`. |
 | `run_pl_dea(spec, paths, options)` | Orchestrates the full pipeline, writes per-method CSVs, returns the consensus table. |
 
 ## Directory layout

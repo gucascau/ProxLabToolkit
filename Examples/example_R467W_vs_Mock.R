@@ -29,5 +29,6 @@ cat("Methods run:", paste(names(out$results), collapse = ", "), "\n")
 cat("Consensus table rows:", nrow(out$combined), "\n")
 print(head(out$combined))
 
+# setting up the adjusted P values and max_logFC for the DEPs. 
 deps <- call_deps(out$combined)
 cat("Consensus DEPs (Fisher p<=0.05 & |max_logFC|>0.25):", nrow(deps), "\n")
