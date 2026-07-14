@@ -1,0 +1,37 @@
+INFO  [2026-07-14 09:09:55] MSstats - dataProcess function
+INFO  [2026-07-14 09:09:55] Summary method: TMP
+INFO  [2026-07-14 09:09:55] censoredInt: NA
+INFO  [2026-07-14 09:09:55] ** Features with one or two measurements across runs are removed.
+INFO  [2026-07-14 09:09:55] ** Fractionation handled.
+INFO  [2026-07-14 09:09:55] ** Updated quantification data to make balanced design. Missing values are marked by NA
+INFO  [2026-07-14 09:09:55] 
+
+INFO  [2026-07-14 09:09:55] Logarithm transformation with base 2 is done
+INFO  [2026-07-14 09:09:56] Factorize in columns(GROUP, SUBJECT, GROUP_ORIGINAL, SUBJECT_ORIGINAL, FEATURE, RUN)
+Normalization based on median: OK [2026-07-14 09:09:56] 
+INFO  [2026-07-14 09:09:56] ** Log2 intensities under cutoff = 18.259  were considered as censored missing values.
+INFO  [2026-07-14 09:09:56] ** Log2 intensities = NA were considered as censored missing values.
+INFO  [2026-07-14 09:09:56] ** Use all features that the dataset originally has.
+INFO  [2026-07-14 09:09:56] 
+ # proteins: 2023
+ # peptides per protein: 1-370
+ # features per peptide: 1-1
+INFO  [2026-07-14 09:09:56] Some proteins have only one feature: 
+ sp|A0AVT1|UBA6_HUMAN,
+ sp|A1L0T0|HACL2_HUMAN,
+ sp|A2RUS2-2|DEND3_HUMAN,
+ sp|A3KN83-2|SBNO1_HUMAN,
+ sp|A5YKK6|CNOT1_HUMAN ...
+INFO  [2026-07-14 09:09:56] 
+                    Mock_Ind negtKTSwt_R467W_Ind
+             # runs        3                   3
+    # bioreplicates        3                   3
+ # tech. replicates        1                   1
+INFO  [2026-07-14 09:09:56] Some features are completely missing in at least one condition:  
+ GSNEEDTDTPLFIGK_2_NA_NA,
+ SLPVPQLVPETEDEK_2_NA_NA,
+ NVEVIELAK_2_NA_NA,
+ VGLLQYGSTVK_2_NA_NA,
+ DSQVVQVVLDGLK_2_NA_NA ...
+INFO  [2026-07-14 09:09:56] == Start the summarization per subplot...
+INFO  [2026-07-14 09:10:12] == Summarization is done.
