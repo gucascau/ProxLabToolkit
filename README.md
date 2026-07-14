@@ -6,8 +6,7 @@ Proximity-labeling (PL) proteomics is a technique for mapping a protein's
 local interaction neighborhood in living cells. A promiscuous labeling
 enzyme — a biotin ligase (BioID, TurboID) or engineered peroxidase (APEX) —
 is fused to a bait protein of interest and expressed in cells. Upon
-activation (biotin addition, or biotin-phenol + H2O2 for APEX), the enzyme
-covalently tags proteins within a short radius with
+activation, the enzyme covalently tags proteins within a short radius with
 biotin. Biotinylated proteins are then enriched with streptavidin beads,
 digested, and identified/quantified by mass spectrometry, yielding a
 snapshot of the bait's proximal interactome — including transient and
@@ -57,7 +56,7 @@ for that data.
 <img src="Figs/ProximalLabling.png" width="1500"/>
 
 
-## Comparison spec (replaces hard-coded sample vectors)
+## Comparison spec
 
 ```r
 spec <- comparison_spec(
