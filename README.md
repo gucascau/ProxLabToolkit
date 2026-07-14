@@ -7,7 +7,7 @@ local interaction neighborhood in living cells. A promiscuous labeling
 enzyme — a biotin ligase (BioID, TurboID) or engineered peroxidase (APEX) —
 is fused to a bait protein of interest and expressed in cells. Upon
 activation (biotin addition, or biotin-phenol + H2O2 for APEX), the enzyme
-covalently tags proteins within a short radius (roughly 10-20 nm) with
+covalently tags proteins within a short radius with
 biotin. Biotinylated proteins are then enriched with streptavidin beads,
 digested, and identified/quantified by mass spectrometry, yielding a
 snapshot of the bait's proximal interactome — including transient and
@@ -20,41 +20,22 @@ AP-MS data and shape most of this toolkit's design choices, described next.
 
 ### Bioinformatic limitations of proximity-labeling (BioID/TurboID/APEX) data
 
-Proximity-labeling experiments generate protein interaction data with several
-analytical challenges that distinguish them from standard AP-MS/expression
-proteomics, and that motivate most of the design choices in this toolkit:
+PL data poses several analytical challenges beyond standard AP-MS/expression
+proteomics, which shape this toolkit's design:
 
-- **Non-specific, stochastic biotinylation.** Labeling is diffusion-driven and
-  not stoichiometric, so signal reflects a mix of true proximal interactors and
-  background labeling of abundant bystander proteins — a stringent statistical
-  threshold and control comparison (e.g. mock/untagged bait) are required
-  rather than presence/absence calls.
-- **Streptavidin pulldown contaminants.** Endogenously biotinylated proteins
-  (carboxylases), keratins, and other common streptavidin-bead binders show up
-  in every pulldown regardless of bait; these need explicit CRAPome-style
-  filtering (`load_contaminant_list()` / `filter_contaminants()`) rather than
-  being left for the statistical model to reject.
-- **MNAR-dominated missingness.** Proteins near the labeling/detection floor
-  are more likely to be missing precisely because their true abundance is low,
-  not at random — standard imputation (mean/kNN alone) biases these toward the
-  bulk distribution. This toolkit classifies MNAR vs MAR per protein and
-  imputes them differently (`classify_mnar()` / `impute_mixed()`).
-- **Variable bait expression and enzyme activity across replicates.** Batch-
-  and replicate-level differences in labeling efficiency (not just true
-  biology) show up as intensity shifts, so normalization
-  (`log2_quantile_normalize()`) is applied before any comparison.
-- **No single differential-abundance method is robust on its own.** Moderated
-  t-tests, rank-based tests, and count-based tests each make different
-  assumptions and are differently sensitive to the noise patterns above, so
-  any one method alone under- or over-calls hits. This toolkit runs multiple
-  methods (Limma, DEqMS, proDA, ROTS, DEP, MSstats, Wilcoxon) and combines
-  their p-values (`combine_pvalues()`) into a consensus call, reducing
-  method-specific artifacts at the cost of requiring all methods to be run
-  consistently on the same input.
-- **Small replicate numbers.** These experiments are typically run with few
-  biological replicates, limiting statistical power — a reason consensus
-  scoring across methods is preferred here over relying on strict correction
-  within a single test.
+- **Non-specific, stochastic biotinylation** blurs true interactors with
+  background — needs stringent thresholds and control comparisons.
+- **Streptavidin pulldown contaminants** (carboxylases, keratins) appear in
+  every sample regardless of bait — needs CRAPome-style filtering.
+- **MNAR-dominated missingness** — low-abundance proteins go missing
+  non-randomly, requiring MNAR-aware imputation rather than plain kNN/mean.
+- **Variable bait expression/enzyme activity across replicates** adds
+  intensity shifts independent of true biology — requires normalization.
+- **No single DEA method is robust alone** — different methods' assumptions
+  make them differently sensitive to the noise above, motivating a
+  multi-method consensus rather than one test.
+- **Small replicate numbers**, typical of these experiments, further favor
+  consensus scoring over strict single-test correction.
 
 ## Project Description
 
