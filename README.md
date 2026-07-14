@@ -56,6 +56,24 @@ for that data.
 <img src="Figs/ProximalLabling.png" width="1500"/>
 
 
+## Installation
+
+The toolkit is plain sourced `.R` files (no package/DESCRIPTION), but depends
+on several CRAN and Bioconductor packages:
+
+```r
+install.packages(c(
+  "dplyr", "tidyr", "purrr", "tibble", "data.table", "readr",
+  "imputeLCMD", "metap"
+))
+
+if (!requireNamespace("BiocManager", quietly = TRUE)) install.packages("BiocManager")
+BiocManager::install(c(
+  "limma", "impute", "DEP", "DEqMS", "MSstats", "proDA",
+  "ROTS", "qvalue", "MsCoreUtils"
+))
+```
+
 ## Usage
 
 ```r
