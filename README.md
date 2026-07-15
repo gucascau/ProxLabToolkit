@@ -115,7 +115,13 @@ called DEPs to `out_dir/<name>__DEPs.csv` (using `opts$dep_p_col`/
 correlation-corrected Fisher + logFC + ≥3-method consensus).
 
 See [Examples/example_R467W_vs_Mock.R](Examples/example_R467W_vs_Mock.R) for a
-complete, already-validated run.
+complete, already-validated run. 
+You can edit each section in the example code and run the example directly
+
+``` r
+Rscript Examples/example_R467W_vs_Mock.R
+
+```
 
 ## Key function contracts
 
