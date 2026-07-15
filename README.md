@@ -106,13 +106,6 @@ deps <- call_deps(out$combined, p_col = "FinaladjP_FisherCorrected",
                    logfc_cutoff = 0.25, min_methods = 3)
 ```
 
-Per-method results are written to `out_dir/<Method>/`, the normalized +
-imputed expression matrix to
-`out_dir/<name>__normalized_imputed_matrix.csv`, the consensus table to
-`out_dir/<name>__FinalCombinedPvalue_IntegratedMethods.csv`, and the final
-called DEPs to `out_dir/<name>__DEPs.csv` (using `opts$dep_p_col`/
-`dep_p_cutoff`/`dep_logfc_cutoff`/`dep_min_methods`, defaulting to
-correlation-corrected Fisher + logFC + ≥3-method consensus).
 
 See [Examples/example_R467W_vs_Mock.R](Examples/example_R467W_vs_Mock.R) for a
 complete, already-validated run. 
@@ -122,6 +115,12 @@ You can edit each section in the example code and run the example directly
 Rscript Examples/example_R467W_vs_Mock.R
 
 ```
+
+## Outputs
+Per-method results are written to `out_dir/<Method>/`.
+The normalized + imputed expression matrix to `out_dir/<name>__normalized_imputed_matrix.csv`.
+The consensus table to `out_dir/<name>__FinalCombinedPvalue_IntegratedMethods.csv`.
+The final called DEPs to `out_dir/<name>__DEPs.csv` (using `opts$dep_p_col`/ `dep_p_cutoff`/`dep_logfc_cutoff`/`dep_min_methods`, defaulting to correlation-corrected Fisher + logFC + ≥3-method consensus).
 
 ## Key function contracts
 
