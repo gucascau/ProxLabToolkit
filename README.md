@@ -117,10 +117,10 @@ Rscript Examples/example_R467W_vs_Mock.R
 ```
 
 ## Outputs
-Per-method results are written to `out_dir/<Method>/`. 
-The normalized + imputed expression matrix to `out_dir/<name>__normalized_imputed_matrix.csv`. 
-The consensus table to `out_dir/<name>__FinalCombinedPvalue_IntegratedMethods.csv`. 
-The final called DEPs to `out_dir/<name>__DEPs.csv` (using `opts$dep_p_col`/ `dep_p_cutoff`/`dep_logfc_cutoff`/`dep_min_methods`, defaulting to correlation-corrected Fisher + logFC + ≥3-method consensus). 
+- Per-method results are written to `out_dir/<Method>/` with the logFC, Pvalue and P adjusted values 
+- Normalized + imputed expression matrix to `out_dir/<name>__normalized_imputed_matrix.csv`. 
+- Consensus table to `out_dir/<name>__FinalCombinedPvalue_IntegratedMethods.csv`. 
+- Final called DEPs to `out_dir/<name>__DEPs.csv` (using `opts$dep_p_col`/ `dep_p_cutoff`/`dep_logfc_cutoff`/`dep_min_methods`, defaulting to correlation-corrected Fisher + logFC + ≥3-method consensus). 
 
 ## Key function contracts
 
