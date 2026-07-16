@@ -33,19 +33,19 @@ two as rigorously as the data allows.
 
 ```{r source-toolkit}
 # Install the  packages before sourcing the codes
-install.packages(c(
-  "dplyr", "tidyr", "purrr", "tibble", "data.table", "readr",
-  "imputeLCMD", "metap"
-))
-
-if (!requireNamespace("BiocManager", quietly = TRUE)) install.packages("BiocManager")
-BiocManager::install(c(
-  "limma", "impute", "DEP", "DEqMS", "MSstats", "proDA",
-  "ROTS", "qvalue", "MsCoreUtils"
-))
-
-# Download the source codes:
-git clone https://github.com/gucascau/ProxLabToolkit.git
+# install.packages(c(
+#   "dplyr", "tidyr", "purrr", "tibble", "data.table", "readr",
+#   "imputeLCMD", "metap"
+# ))
+# 
+# if (!requireNamespace("BiocManager", quietly = TRUE)) install.packages("BiocManager")
+# BiocManager::install(c(
+#   "limma", "impute", "DEP", "DEqMS", "MSstats", "proDA",
+#   "ROTS", "qvalue", "MsCoreUtils"
+# ))
+# 
+# # Download the source codes:
+# git clone https://github.com/gucascau/ProxLabToolkit.git
 ```
 
 ## Step 2 - Source the toolkit

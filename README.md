@@ -110,6 +110,7 @@ deps <- call_deps(out$combined, p_col = "FinaladjP_FisherCorrected",
 See [Examples/example_R467W_vs_Mock.R](Examples/example_R467W_vs_Mock.R) for a
 complete, already-validated run. 
 You can edit each section in the example code and run the example directly
+The detailed tutorial is also available [Examples/Tutorials.Rmd]
 
 ``` r
 Rscript Examples/example_R467W_vs_Mock.R
