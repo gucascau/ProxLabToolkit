@@ -1,6 +1,7 @@
 ---
-title: "PLToolkit walkthrough: NegKTSwt (WT1(-)KTS, wild-type) Ind vs Mock Ind"
+title: "PLToolkit walkthrough tutorials"
 author: "Xin Wang"
+email: xin.wang@nationwidechildrens.org
 date: "`r format(Sys.Date())`"
 description: >
   A step-by-step, narrated walkthrough of Examples/example_NegKTSwt_vs_Mock.R -
@@ -30,6 +31,18 @@ two as rigorously as the data allows.
 ## Step 1 - Source the toolkit
 
 ```{r source-toolkit}
+# Install the  packages before sourcing the codes
+install.packages(c(
+  "dplyr", "tidyr", "purrr", "tibble", "data.table", "readr",
+  "imputeLCMD", "metap"
+))
+
+if (!requireNamespace("BiocManager", quietly = TRUE)) install.packages("BiocManager")
+BiocManager::install(c(
+  "limma", "impute", "DEP", "DEqMS", "MSstats", "proDA",
+  "ROTS", "qvalue", "MsCoreUtils"
+))
+# Source the PLTookit: 
 toolkit_dir <- "/Users/XXW004/Documents/Projects/MannNina/Project/WT1/scripts/PLToolkit"
 
 for (f in list.files(file.path(toolkit_dir, "R"), pattern = "\\.R$", full.names = TRUE)) {
@@ -41,6 +54,7 @@ This sources every `R/*.R` file in the toolkit - there's no package/DESCRIPTION,
 so nothing else is needed beyond the CRAN/Bioconductor dependencies listed in
 the toolkit's README (`limma`, `DEqMS`, `DEP`, `proDA`, `MSstats`, `ROTS`,
 `impute`, `imputeLCMD`, `metap`, `qvalue`, ...).
+Please install these library before source the toolkit
 
 ## Step 2 - Define the comparison (`comparison_spec`)
 
