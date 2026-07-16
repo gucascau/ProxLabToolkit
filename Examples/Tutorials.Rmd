@@ -1,11 +1,11 @@
 ---
-title: "PLToolkit walkthrough tutorials"
+title: "ProxLabToolkit walkthrough tutorials"
 author: "Xin Wang"
 email: xin.wang@nationwidechildrens.org
 date: "`r format(Sys.Date())`"
 description: >
   A step-by-step, narrated walkthrough of Examples/example_NegKTSwt_vs_Mock.R -
-  every step the PLToolkit pipeline performs for the NegKTSwt-vs-Mock proximity
+  every step the ProxLabToolkit pipeline performs for the NegKTSwt-vs-Mock proximity
   labeling comparison, with the statistical reasoning behind each step spelled
   out inline. Uses wild-type WT1(-)KTS as the bait, unlike
   example_R467W_vs_Mock.R (a pathogenic/deficient variant) - preferred as the
@@ -28,8 +28,8 @@ biotinylation, streptavidin-pulldown contaminants, missing-not-at-random
 low-abundance dropout) - the entire pipeline below exists to separate the
 two as rigorously as the data allows.
 
-## Step 1 - Source the toolkit
 
+## Step 1 - Download the codes and install the packages
 ```{r source-toolkit}
 # Install the  packages before sourcing the codes
 install.packages(c(
@@ -42,8 +42,17 @@ BiocManager::install(c(
   "limma", "impute", "DEP", "DEqMS", "MSstats", "proDA",
   "ROTS", "qvalue", "MsCoreUtils"
 ))
+
+# Download the source codes
+git clone 
+
+```
+
+# Download the codes:
+
+```{r source-toolkit}
 # Source the PLTookit: 
-toolkit_dir <- "/Users/XXW004/Documents/Projects/MannNina/Project/WT1/scripts/PLToolkit"
+toolkit_dir <- "/Users/XXW004/Documents/Projects/MannNina/Project/WT1/scripts/ProxLabToolkit"
 
 for (f in list.files(file.path(toolkit_dir, "R"), pattern = "\\.R$", full.names = TRUE)) {
   source(f)
@@ -84,7 +93,7 @@ paths <- list(
   msstats_path = "/Users/XXW004/Documents/Projects/MannNina/Project/WT1/Preproceed/MSstats.csv",
   combined_peptide_path = "/Users/XXW004/Documents/Projects/MannNina/Project/WT1/Preproceed/combined_peptide.tsv",
   contaminant_list_path = NULL,
-  out_dir = "/Users/XXW004/Documents/Projects/MannNina/Project/WT1/Results/NegKTSwtvsMockInd/PLToolkitDemo/"
+  out_dir = "/Users/XXW004/Documents/Projects/MannNina/Project/WT1/Results/NegKTSwtvsMockInd/ProxLabToolkitDemo/"
 )
 ```
 

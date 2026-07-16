@@ -32,7 +32,7 @@ it reproduces (and improves on) one existing comparison end-to-end.
 ## Directory layout
 
 ```
-WT1/scripts/PLToolkit/
+WT1/scripts/ProxLabToolkit/
   R/
     load_data.R          # FragPipe protein loader + gene dedup, PSM-count loader, MSstats raw loader
     contaminants.R        # contaminant list loader + filter step
