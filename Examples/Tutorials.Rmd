@@ -30,6 +30,7 @@ two as rigorously as the data allows.
 
 
 ## Step 1 - Download the codes and install the packages
+
 ```{r source-toolkit}
 # Install the  packages before sourcing the codes
 install.packages(c(
@@ -43,17 +44,17 @@ BiocManager::install(c(
   "ROTS", "qvalue", "MsCoreUtils"
 ))
 
-# Download the source codes
-git clone 
-
+# Download the source codes:
+git clone https://github.com/gucascau/ProxLabToolkit.git
 ```
 
-# Download the codes:
+## Step 2 - Source the toolkit
 
 ```{r source-toolkit}
-# Source the PLTookit: 
+# Provide the directory of the ProLabToolkit codes:
 toolkit_dir <- "/Users/XXW004/Documents/Projects/MannNina/Project/WT1/scripts/ProxLabToolkit"
 
+# Source the toolkit
 for (f in list.files(file.path(toolkit_dir, "R"), pattern = "\\.R$", full.names = TRUE)) {
   source(f)
 }
@@ -63,9 +64,8 @@ This sources every `R/*.R` file in the toolkit - there's no package/DESCRIPTION,
 so nothing else is needed beyond the CRAN/Bioconductor dependencies listed in
 the toolkit's README (`limma`, `DEqMS`, `DEP`, `proDA`, `MSstats`, `ROTS`,
 `impute`, `imputeLCMD`, `metap`, `qvalue`, ...).
-Please install these library before source the toolkit
 
-## Step 2 - Define the comparison (`comparison_spec`)
+## Step 3 - Define the comparison (`comparison_spec`)
 
 ```{r spec}
 spec <- comparison_spec(
@@ -84,7 +84,7 @@ values a protein is allowed to have across these 6 samples before it's
 dropped entirely (see Step 4). Nothing about *how* the comparison is analyzed
 lives here - that's all downstream in `run_pl_dea()`.
 
-## Step 3 - Point at the input files
+## Step 4 - Point at the input files
 
 ```{r paths}
 paths <- list(
@@ -114,7 +114,7 @@ optional and each unlocks one extra piece of the analysis if supplied:
   carboxylases). `NULL` here means no contaminant filtering is applied in
   this run.
 
-## Step 4 - Run the pipeline (`run_pl_dea`)
+## Step 5 - Run the pipeline (`run_pl_dea`)
 
 ```{r run-pipeline}
 out <- run_pl_dea(spec, paths)
@@ -122,7 +122,7 @@ out <- run_pl_dea(spec, paths)
 
 This one call does the entire intensity-branch analysis. Unpacked:
 
-### 4a. Load and extract
+### 5a. Load and extract
 
 `load_fragpipe_protein()` reads `combined_protein.csv`, restricts to the
 target organism, dedupes by `Gene`, and strips FragPipe's `_HUMAN` suffixes.
@@ -130,20 +130,22 @@ target organism, dedupes by `Gene`, and strips FragPipe's `_HUMAN` suffixes.
 intensity columns, recodes zero (not detected) as `NA`, and drops any
 protein with more than `spec$max_na` missing values across those 6 samples.
 
-### 4b. Normalize
+### 5b. Normalize
 
 `log2_quantile_normalize()` log2-transforms the retained intensities and
 quantile-normalizes across samples (`limma::normalizeBetweenArrays`) -
 correcting for the bait/enzyme-activity-driven intensity shifts that differ
 between replicates even before biology is considered.
 
-### 4c. Classify and impute missingness
+### 5c. Classify and impute missingness
 
 Not all missingness means the same thing. `classify_mnar()` flags a protein
 as **MNAR** (missing not at random) if it's entirely absent in one whole
 condition group - consistent with truly being below the limit of detection
 in that condition, not random dropout. Everything else is **MAR** (missing
-at random, scattered dropouts). `impute_mixed()` then imputes each class
+at random, scattered dropouts). 
+
+`impute_mixed()` then imputes each class
 differently: k-nearest-neighbors (`impute::impute.knn`) for MAR values, and
 left-censored minimum-probability imputation (`imputeLCMD::impute.MinProb`,
 quantile 0.01) for MNAR values - applied directly to the full matrix rather
@@ -155,14 +157,14 @@ The fully-imputed, normalized log2 matrix is written out here too, at
 `out_dir/NegKTSwt_vs_Mock__normalized_imputed_matrix.csv`, and is what four
 of the seven DEA methods below actually test.
 
-### 4d. Seven independent DEA methods
+### 5d. Seven independent DEA methods
 
 | Method | What it does differently |
 | --- | --- |
 | **limma** | Moderated t-test: empirical-Bayes shrinkage of each protein's variance toward a common prior, on the shared imputed matrix. |
 | **DEqMS** | Same limma fit, but the empirical-Bayes prior variance is additionally a function of each protein's minimum PSM count (from `psm_dir`) - corrects for proteins quantified from very few PSMs having systematically noisier variance than limma alone assumes. |
 | **Wilcoxon** | Non-parametric rank-sum test per protein, same imputed matrix - no distributional assumption, so a useful check against the parametric methods. |
-| **ROTS** | A modified t-statistic whose regularization is chosen by optimizing reproducibility of the top gene list across bootstrap resamples (10,000 resamples, optimized over the top 500 genes). |
+| **ROTS** | A modified t-statistic whose regularization is chosen by optimizing reproducibility of the top gene list across bootstrap resamples. |
 | **DEP package** | A fully separate, self-contained pipeline on the *raw* (non-shared, non-quantile-normalized) intensities: its own vsn normalization, its own KNN imputation, its own moderated test. |
 | **proDA** | Doesn't impute at all - models left-censored missingness directly in its likelihood. Runs on the log2-only (not quantile-normalized, not imputed) matrix with its own median normalization. |
 | **MSstats** | Entirely independent of `combined_protein.csv` - runs on FragPipe's separate feature-level export, with its own summarization, normalization, and linear mixed-effects model. |
@@ -175,7 +177,7 @@ cat("Proteins after filtering:", nrow(out$intens_raw), "\n")
 cat("Methods run:", paste(names(out$results), collapse = ", "), "\n")
 ```
 
-### 4e. Consensus scoring (`combine_pvalues`, called internally)
+### 5e. Consensus scoring (`combine_pvalues`, called internally)
 
 A protein must be testable by *every* method above to enter the consensus
 (inner join). Per protein, `max_logFC` is the individual method's logFC with
@@ -212,7 +214,7 @@ print(head(out$combined[, c("ID", "max_logFC", "FinalP_Fisher",
                              "FinaladjP_FisherCorrected", "n_methods_hit")]))
 ```
 
-## Step 5 - Call consensus DEPs (`call_deps`)
+## Step 6 - Call consensus DEPs (`call_deps`)
 
 `run_pl_dea()` already called DEPs internally (using
 `opts$dep_p_col`/`dep_p_cutoff`/`dep_logfc_cutoff`/`dep_min_methods`,
@@ -241,7 +243,7 @@ methods to *also* independently agree, rather than trusting the combined
 p-value alone) - three different, complementary lines of evidence a protein
 has to clear before being called a DEP.
 
-## Where to go next
+## Step 7 - Call consensus DEPs (`call_deps`)
 
 This walkthrough covers the **intensity branch** only
 (`run_pl_dea()`/`call_deps()`), matching `example_NegKTSwt_vs_Mock.R`
