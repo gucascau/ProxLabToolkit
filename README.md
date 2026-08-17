@@ -66,6 +66,7 @@ install.packages(c(
   "dplyr", "tidyr", "purrr", "tibble", "data.table", "readr",
   "imputeLCMD", "metap"
 ))
+# if you have not install BioManager, please install it.
 
 if (!requireNamespace("BiocManager", quietly = TRUE)) install.packages("BiocManager")
 BiocManager::install(c(
