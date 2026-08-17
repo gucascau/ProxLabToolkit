@@ -90,6 +90,7 @@ spec <- comparison_spec(
 )
 
 # 3. Point at the input files (psm_dir/msstats_path/contaminant_list_path are optional)
+#   please note our combined_protein.csv, psm_dir, msstats are results from Fragepipe
 paths <- list(
   combined_protein_path = "path/to/combined_protein.csv",
   psm_dir                = "path/to/psm_dir/",
