@@ -32,18 +32,13 @@ run_deqms <- function(dat_log_exp, spec, min_psm_by_gene) {
   count[is.na(count)] <- 0
   fit3$count <- count + 1
   fit4 <- spectraCounteBayes(fit3)
-  outputResult(fit4, coef_col = 1) %>% rownames_to_column("Gene")
-}
-
-run_wilcoxon <- function(dat_log_exp, spec) {
-  n1 <- length(spec$group1_cols)
-  n2 <- length(spec$group2_cols)
-  g1 <- seq_len(n1)
-  g2 <- (n1 + 1):(n1 + n2)
-  pval <- apply(dat_log_exp, 1, function(x) wilcox.test(x[g1], x[g2])$p.value)
-  logFC <- rowMeans(dat_log_exp[, g1, drop = FALSE]) - rowMeans(dat_log_exp[, g2, drop = FALSE])
-  data.frame(Gene = rownames(dat_log_exp), logFC = logFC, P.Value = pval,
-             adj.pval = p.adjust(pval, method = "fdr"))
+  # outputResult() keeps limma's ordinary statistics in t/P.Value/adj.P.Val and
+  # DEqMS's PSM-count-moderated ones in sca.*. Expose DEqMS's as the standard
+  # columns so the consensus uses DEqMS itself rather than a copy of limma.
+  outputResult(fit4, coef_col = 1) %>%
+    rownames_to_column("Gene") %>%
+    rename(limma_t = t, limma_P.Value = P.Value, limma_adj.P.Val = adj.P.Val) %>%
+    mutate(t = sca.t, P.Value = sca.P.Value, adj.P.Val = sca.adj.pval)
 }
 
 run_rots <- function(dat_log_exp, spec, B = 10000, K = 500, seed = 1234) {

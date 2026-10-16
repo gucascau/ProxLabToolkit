@@ -96,6 +96,7 @@ paths <- list(
   psm_dir                = "path/to/psm_dir/",
   msstats_path           = "path/to/MSstats.csv",
   contaminant_list_path  = NULL,
+  crapome_path           = "Datasets/crapome_reprint-apms.org.csv",  # optional
   out_dir                = "path/to/output/"
 )
 
@@ -124,6 +125,7 @@ Rscript Examples/example_R467W_vs_Mock.R
 - Normalized + imputed expression matrix to `out_dir/<name>__normalized_imputed_matrix.csv`. 
 - Consensus table to `out_dir/<name>__FinalCombinedPvalue_IntegratedMethods.csv`. 
 - Final called DEPs to `out_dir/<name>__DEPs.csv` (using `opts$dep_p_col`/ `dep_p_cutoff`/`dep_logfc_cutoff`/`dep_min_methods`, defaulting to correlation-corrected Fisher + logFC + ≥3-method consensus). 
+- If `paths$crapome_path` is supplied, the consensus, fused and DEPs tables gain CRAPome background columns: `CRAPome_n_found`, `CRAPome_Freq` (fraction of the 343 reprint-apms.org control runs the gene was detected in), `CRAPome_AvgSC`, `CRAPome_MaxSC`, and `CRAPome_Flag` (`CRAPome_Freq >= options$crapome_freq_cutoff`, default 0.2). Flagging is annotation only - flagged proteins stay in every table.
 
 ## Key function contracts
 
@@ -131,10 +133,11 @@ Rscript Examples/example_R467W_vs_Mock.R
 | --- | --- |
 | `load_fragpipe_protein(path, organism)` | Load FragPipe `combined_protein.csv`, dedupe by `Gene`, strip `_HUMAN`. |
 | `load_contaminant_list()` / `filter_contaminants()` | CRAPome-style contaminant filtering; ships a small placeholder list (keratins, trypsin, albumin) — supply your own CRAPome export for real use. |
+| `load_crapome(path)` / `annotate_crapome(df, crapome, gene_col, freq_cutoff = 0.2)` | Summarise a full CRAPome matrix export (e.g. `Datasets/crapome_reprint-apms.org.csv`) into per-gene detection frequency / spectral counts across control runs, join those onto a result table with a `CRAPome_Flag` (annotation only, nothing is removed). Used automatically by `run_pl_dea()`/`run_pl_interactome()` when `paths$crapome_path` is set. |
 | `extract_intensity_matrix(df, spec)` | Build the intensity matrix for a comparison, filtering by max NA per row. |
 | `log2_quantile_normalize(mat)` | log2 + `limma::normalizeBetweenArrays`. |
 | `classify_mnar()` / `impute_mixed()` | Classify MNAR vs MAR per protein; kNN for MAR, `imputeLCMD::impute.MinProb()` for MNAR (DEP's own `fun="mixed"` is broken for small MNAR subsets — don't use it). |
-| `run_limma`, `run_deqms`, `run_wilcoxon`, `run_rots` | Four DEA methods sharing one imputed matrix + condition vector; each returns a standardized, Gene-keyed table. `run_deqms` needs `load_psm_counts()`. |
+| `run_limma`, `run_deqms`, `run_rots` | Three DEA methods sharing one imputed matrix + condition vector; each returns a standardized, Gene-keyed table. `run_deqms` needs `load_psm_counts()` and reports DEqMS's PSM-count-moderated statistics (limma's are kept as `limma_*` columns). A Wilcoxon rank-sum test is deliberately not included: with 3 vs 3 replicates its smallest attainable p-value is 0.1. |
 | `run_dep_package(intens_raw, spec)` | DEP-package-native pipeline (`make_se` → `filter_missval` → `normalize_vsn` → impute → `test_diff` → `get_results`). |
 | `run_proda(intens_tran, spec)` | proDA-based DEA on the log2-only (not quantile-normalized) matrix. |
 | `run_msstats(msstats_csv_path, spec)` | MSstats-based DEA, reading directly from the raw MSstats CSV rather than `combined_protein.csv`. |
@@ -152,10 +155,10 @@ Rscript Examples/example_R467W_vs_Mock.R
 WT1/scripts/ProxLabToolkit/
   R/
     load_data.R          # FragPipe protein loader + gene dedup, PSM-count loader, MSstats raw loader
-    contaminants.R        # contaminant list loader + filter step
+    contaminants.R        # contaminant list loader + filter step, CRAPome frequency annotation
     preprocess.R           # intensity matrix extraction (0->NA, column select/reorder, NA-count filter), log2 + quantile normalize
     impute.R                # MNAR classification + validated mixed KNN/MinProb imputation
-    dea_matrix_methods.R    # run_limma, run_deqms, run_wilcoxon, run_rots (share the same imputed matrix + cond vector)
+    dea_matrix_methods.R    # run_limma, run_deqms, run_rots (share the same imputed matrix + cond vector)
     dea_dep_package.R       # run_dep_package (wraps DEP's own make_se -> filter_missval -> normalize_vsn -> impute -> test_diff pipeline)
     dea_proda.R             # run_proda
     dea_msstats.R           # run_msstats

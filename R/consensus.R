@@ -41,7 +41,7 @@ add_max_logfc <- function(combined, logfc_cols) {
 #' lines 150-221 verbatim (same formulas/seed/n_perm default).
 #'
 #' Caveat: all four assume the input p-values are independent tests. Here
-#' they mostly aren't - Limma/DEqMS/Wilcoxon/ROTS/DEP/proDA are computed on
+#' they mostly aren't - Limma/DEqMS/ROTS/DEP/proDA are computed on
 #' the same underlying intensity matrix, so their p-values are correlated.
 #' Under positive correlation, Fisher's method in particular is
 #' anti-conservative (inflates the false-positive rate). See
@@ -133,10 +133,9 @@ add_vote_counts <- function(combined, logfc_cols, pvalue_cols,
 #' so by default logfc_cols/pvalue_cols are just "<method>_logFC" /
 #' "<method>_P.Value" for every method in results_list - override to match
 #' the original scripts' choice of excluding a method from the combined
-#' statistic (the original excluded Wilcoxon/Annova from p-value combination
-#' for reasons not stated in the code; this default includes every method
-#' passed in instead, since Ttest/Annova are no longer first-class methods
-#' here - worth a deliberate decision rather than silently inheriting that).
+#' statistic. Wilcoxon is no longer run at all: with 3 vs 3 replicates its
+#' smallest attainable two-sided p-value is 2/choose(6, 3) = 0.1, so it could
+#' never reach significance and only diluted the combined statistic.
 #' `p_cutoff`/`logfc_cutoff` are only used for the vote-count columns
 #' (n_methods_tested/n_methods_hit) - they don't affect the p-value columns.
 combine_pvalues <- function(results_list, id_col = "Gene",

@@ -38,7 +38,8 @@ fuse_branches <- function(count_results, intensity_combined,
                             intensity_p_col = "FinaladjP_FisherCorrected",
                             intensity_logfc_col = "max_logFC",
                             intensity_p_cutoff = 0.05,
-                            intensity_logfc_cutoff = 0.25) {
+                            intensity_logfc_cutoff = 0.25,
+                            intensity_min_methods = 3) {
   merged <- inner_join(count_results, intensity_combined, by = c("Gene" = "ID"))
 
   merged$count_posterior <- merged$P_count
@@ -52,8 +53,15 @@ fuse_branches <- function(count_results, intensity_combined,
   merged$Fused_Score <- fused_odds / (1 + fused_odds)
 
   count_positive <- merged$count_posterior >= count_cutoff
-  intensity_positive <- merged[[intensity_p_col]] <= intensity_p_cutoff &
-    abs(merged[[intensity_logfc_col]]) > intensity_logfc_cutoff
+  # Same three criteria as call_deps() in run_pl_dea(), so a protein tagged
+  # intensity-positive here is exactly an intensity-consensus DEP. Without the
+  # vote criterion, a protein passing p/logFC but not the vote was tagged
+  # "Both" yet fell out of the final list (neither a DEP nor Count_only).
+  votes_ok <- if (is.null(intensity_min_methods)) TRUE else
+    !is.na(merged$n_methods_hit) & merged$n_methods_hit >= intensity_min_methods
+  intensity_positive <- !is.na(merged[[intensity_p_col]]) &
+    merged[[intensity_p_col]] <= intensity_p_cutoff &
+    abs(merged[[intensity_logfc_col]]) > intensity_logfc_cutoff & votes_ok
 
   merged$Evidence <- case_when(
     count_positive & intensity_positive ~ "Both",

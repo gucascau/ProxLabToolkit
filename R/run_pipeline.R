@@ -3,25 +3,33 @@ library(dplyr)
 #' Run the full proximity-labeling DEP pipeline for one comparison spec:
 #' load FragPipe protein table -> (optional) contaminant filter -> extract
 #' intensity matrix -> log2/quantile normalize -> mixed MAR/MNAR impute ->
-#' Limma/DEqMS/Wilcoxon/ROTS/DEP/proDA/(optional MSstats) -> consensus.
+#' Limma/DEqMS/ROTS/DEP/proDA/(optional MSstats) -> consensus.
 #'
 #' `paths`: combined_protein_path (required), psm_dir (optional - skips DEqMS
 #' if omitted), msstats_path (optional - skips MSstats if omitted),
 #' contaminant_list_path (optional), combined_peptide_path (optional - adds a
 #' min_peptides_per_sample QC column to the consensus/DEPs tables, flagging
 #' proteins whose MaxLFQ intensity rests on very few peptides in some sample;
-#' purely informational, doesn't filter anything), out_dir (required).
+#' purely informational, doesn't filter anything), crapome_path (optional - a
+#' full CRAPome matrix export such as Datasets/crapome_reprint-apms.org.csv;
+#' adds CRAPome_* background-frequency columns to the consensus/DEPs tables,
+#' see load_crapome()/annotate_crapome()), out_dir (required).
 #' `options`: organism, rots_B/rots_K/rots_seed, impute_seed, contaminants
 #' (a pre-loaded character vector, takes precedence over contaminant_list_path),
 #' dep_p_col/dep_p_cutoff/dep_logfc_cutoff/dep_min_methods (passed straight to
-#' call_deps() for the final DEPs list - see its docs in consensus.R).
+#' call_deps() for the final DEPs list - see its docs in consensus.R),
+#' crapome (a pre-loaded load_crapome() table, takes precedence over
+#' crapome_path), crapome_freq_cutoff (CRAPome_Flag = TRUE when found in at
+#' least this fraction of CRAPome controls). Flagging is annotation only -
+#' no protein is ever removed on CRAPome evidence.
 run_pl_dea <- function(spec, paths, options = list()) {
   opts <- modifyList(list(
     organism = "Homo sapiens",
     rots_B = 10000, rots_K = 500, rots_seed = 1234,
     impute_seed = 1000000,
     dep_p_col = "FinaladjP_FisherCorrected", dep_p_cutoff = 0.05,
-    dep_logfc_cutoff = 0.25, dep_min_methods = 3
+    dep_logfc_cutoff = 0.25, dep_min_methods = 3,
+    crapome_freq_cutoff = 0.2
   ), options)
 
   dir.create(paths$out_dir, showWarnings = FALSE, recursive = TRUE)
@@ -50,7 +58,6 @@ run_pl_dea <- function(spec, paths, options = list()) {
 
   results <- list()
   results$Limma <- run_limma(dat_log_exp, spec)
-  results$Wilcoxon <- run_wilcoxon(dat_log_exp, spec)
   results$ROTS <- run_rots(dat_log_exp, spec, B = opts$rots_B, K = opts$rots_K, seed = opts$rots_seed)
   results$DEP <- run_dep_package(intens_raw, spec)
   results$proDA <- run_proda(norm$intens_tran, spec)
@@ -93,6 +100,17 @@ run_pl_dea <- function(spec, paths, options = list()) {
     message("paths$combined_peptide_path not supplied - skipping peptide-support QC column.")
   }
 
+  crapome <- opts[["crapome"]]
+  if (is.null(crapome) && !is.null(paths$crapome_path)) {
+    crapome <- load_crapome(paths$crapome_path)
+  }
+  if (!is.null(crapome)) {
+    combined <- annotate_crapome(combined, crapome, gene_col = "ID",
+                                  freq_cutoff = opts$crapome_freq_cutoff)
+  } else {
+    message("paths$crapome_path not supplied - skipping CRAPome annotation.")
+  }
+
   write.csv(combined,
             file.path(paths$out_dir, paste0(spec$name, "__FinalCombinedPvalue_IntegratedMethods.csv")),
             row.names = FALSE)
@@ -124,6 +142,9 @@ run_pl_dea <- function(spec, paths, options = list()) {
 #' corroboration - typically Evidence == "Intensity_only", since with the
 #' default aligned cutoffs an intensity-consensus DEP will always also pass
 #' fuse_branches()'s own, looser intensity_positive check).
+#' If a CRAPome is supplied (paths$crapome_path or options$crapome), the
+#' CRAPome_* columns carry through to the fused table and the final DEPs
+#' (flag only - nothing is removed).
 run_pl_interactome <- function(spec, paths, options = list()) {
   dea <- run_pl_dea(spec, paths, options)
 
@@ -133,7 +154,8 @@ run_pl_interactome <- function(spec, paths, options = list()) {
   fused <- fuse_branches(count_results, dea$combined,
                           count_cutoff = options$count_cutoff %||% 0.75,
                           intensity_p_cutoff = options$intensity_p_cutoff %||% 0.05,
-                          intensity_logfc_cutoff = options$intensity_logfc_cutoff %||% 0.25)
+                          intensity_logfc_cutoff = options$intensity_logfc_cutoff %||% 0.25,
+                          intensity_min_methods = options$dep_min_methods %||% 3)
 
   write.csv(fused, file.path(paths$out_dir, paste0(spec$name, "__FusedInteractomeScore.csv")),
             row.names = FALSE)

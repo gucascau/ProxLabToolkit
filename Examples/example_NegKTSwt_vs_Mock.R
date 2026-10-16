@@ -22,6 +22,9 @@ paths <- list(
   msstats_path = "/Users/XXW004/Documents/Projects/MannNina/Project/WT1/Preproceed/MSstats.csv",
   combined_peptide_path = "/Users/XXW004/Documents/Projects/MannNina/Project/WT1/Preproceed/combined_peptide.tsv",
   contaminant_list_path = NULL,
+  # CRAPome background frequencies - annotation only (CRAPome_* columns +
+  # CRAPome_Flag); no protein is removed.
+  crapome_path = file.path(toolkit_dir, "Datasets", "crapome_reprint-apms.org.csv"),
   out_dir = "/Users/XXW004/Documents/Projects/MannNina/Project/WT1/Results/NegKTSwtvsMockInd/ProxLabToolkitDemo/"
 )
 
@@ -38,3 +41,10 @@ deps <- call_deps(out$combined, p_col = "FinaladjP_FisherCorrected",
                    logfc_cutoff = 0.25, min_methods = 3)
 cat("Consensus DEPs (adj. corrected-Fisher p<=0.05 & |max_logFC|>0.25 & >=3 methods):",
     nrow(deps), "\n")
+
+# CRAPome flag: DEPs detected in >= 20% of CRAPome control runs (default
+# options$crapome_freq_cutoff). Kept in the list - review these by eye.
+flagged <- deps[deps$CRAPome_Flag, ]
+cat("DEPs flagged as frequent CRAPome background:", nrow(flagged), "of", nrow(deps), "\n")
+print(flagged[order(-flagged$CRAPome_Freq),
+              c("ID", "max_logFC", "FinaladjP_FisherCorrected", "CRAPome_Freq", "CRAPome_AvgSC")])

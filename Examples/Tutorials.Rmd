@@ -93,6 +93,7 @@ paths <- list(
   msstats_path = "/Users/XXW004/Documents/Projects/MannNina/Project/WT1/Preproceed/MSstats.csv",
   combined_peptide_path = "/Users/XXW004/Documents/Projects/MannNina/Project/WT1/Preproceed/combined_peptide.tsv",
   contaminant_list_path = NULL,
+  crapome_path = file.path(toolkit_dir, "Datasets", "crapome_reprint-apms.org.csv"),
   out_dir = "/Users/XXW004/Documents/Projects/MannNina/Project/WT1/Results/NegKTSwtvsMockInd/ProxLabToolkitDemo/"
 )
 ```
@@ -113,6 +114,13 @@ optional and each unlocks one extra piece of the analysis if supplied:
   filtering common streptavidin-pulldown contaminants (keratins,
   carboxylases). `NULL` here means no contaminant filtering is applied in
   this run.
+- **`crapome_path`** - the full CRAPome matrix (reprint-apms.org export:
+  per-gene spectral counts in 343 control AP-MS runs). Used at the final
+  step to annotate the consensus/DEPs tables with how often each protein
+  shows up as background (`CRAPome_Freq`, `CRAPome_AvgSC`, `CRAPome_MaxSC`)
+  and a `CRAPome_Flag` (`CRAPome_Freq >= 0.2` by default, tunable via
+  `options$crapome_freq_cutoff`). Flagged proteins are only
+  annotated, never removed.
 
 ## Step 5 - Run the pipeline (`run_pl_dea`)
 
@@ -155,15 +163,14 @@ class size, producing implausibly high "low-abundance" draws.
 
 The fully-imputed, normalized log2 matrix is written out here too, at
 `out_dir/NegKTSwt_vs_Mock__normalized_imputed_matrix.csv`, and is what four
-of the seven DEA methods below actually test.
+of the six DEA methods below actually test.
 
-### 5d. Seven independent DEA methods
+### 5d. Six independent DEA methods
 
 | Method | What it does differently |
 | --- | --- |
 | **limma** | Moderated t-test: empirical-Bayes shrinkage of each protein's variance toward a common prior, on the shared imputed matrix. |
 | **DEqMS** | Same limma fit, but the empirical-Bayes prior variance is additionally a function of each protein's minimum PSM count (from `psm_dir`) - corrects for proteins quantified from very few PSMs having systematically noisier variance than limma alone assumes. |
-| **Wilcoxon** | Non-parametric rank-sum test per protein, same imputed matrix - no distributional assumption, so a useful check against the parametric methods. |
 | **ROTS** | A modified t-statistic whose regularization is chosen by optimizing reproducibility of the top gene list across bootstrap resamples. |
 | **DEP package** | A fully separate, self-contained pipeline on the *raw* (non-shared, non-quantile-normalized) intensities: its own vsn normalization, its own KNN imputation, its own moderated test. |
 | **proDA** | Doesn't impute at all - models left-censored missingness directly in its likelihood. Runs on the log2-only (not quantile-normalized, not imputed) matrix with its own median normalization. |
@@ -181,13 +188,13 @@ cat("Methods run:", paste(names(out$results), collapse = ", "), "\n")
 
 A protein must be testable by *every* method above to enter the consensus
 (inner join). Per protein, `max_logFC` is the individual method's logFC with
-the largest absolute value. The seven methods' p-values are then combined
+the largest absolute value. The six methods' p-values are then combined
 four classical ways - Fisher's method, Tippett's minimum-p method,
 Stouffer's Z-method, and an empirical permutation test (10^5 draws) - each
 independently BH-adjusted.
 
 **The catch:** all four classical methods assume the p-values being combined
-are *independent* tests. Here they mostly aren't - limma/DEqMS/Wilcoxon/
+are *independent* tests. Here they mostly aren't - limma/DEqMS/
 ROTS/DEP/proDA all run on the same (or closely related) imputed intensity
 matrix, so their p-values are correlated. Under positive correlation,
 Fisher's method in particular is anti-conservative (inflated false-positive
@@ -236,14 +243,46 @@ cat("Consensus DEPs (adj. corrected-Fisher p<=0.05 & |max_logFC|>0.25 & >=3 meth
 ```
 
 The three cutoffs being combined here: `p_col`/`p_cutoff` (the
-correlation-corrected combined p-value, correcting for the seven methods'
+correlation-corrected combined p-value, correcting for the six methods'
 non-independence), `logfc_cutoff` (a minimum effect size, independent of
 significance), and `min_methods` (requiring at least 3 of the 7 individual
 methods to *also* independently agree, rather than trusting the combined
 p-value alone) - three different, complementary lines of evidence a protein
 has to clear before being called a DEP.
 
-## Step 7 - Call consensus DEPs (`call_deps`)
+## Step 7 - Flag CRAPome background proteins
+
+Because `crapome_path` was supplied in Step 4, `run_pl_dea()` loaded the
+CRAPome matrix (`load_crapome()`) and annotated the consensus table
+(`annotate_crapome()`), so every DEP table above already carries these
+columns:
+
+- `CRAPome_n_found` / `CRAPome_Freq` - number / fraction of the 343
+  reprint-apms.org control runs the protein was detected in (0 if absent
+  from CRAPome).
+- `CRAPome_AvgSC` / `CRAPome_MaxSC` - average spectral count over the runs it
+  was found in, and the maximum.
+- `CRAPome_Flag` - `TRUE` when `CRAPome_Freq >= 0.2` (change with
+  `options = list(crapome_freq_cutoff = ...)`).
+
+This is annotation only - no protein is removed. Flagged DEPs are frequent
+AP-MS background (heat-shock proteins, tubulins, actinins) but also many
+RNA-binding/splicing proteins (hnRNPs, NONO, SFPQ, DDX5) that may be genuine
+WT1 interactors, so review them by eye rather than discarding them:
+
+```{r crapome-flag}
+flagged <- deps[deps$CRAPome_Flag, ]
+cat("DEPs flagged as frequent CRAPome background:", nrow(flagged), "of", nrow(deps), "\n")
+print(flagged[order(-flagged$CRAPome_Freq),
+              c("ID", "max_logFC", "FinaladjP_FisherCorrected", "CRAPome_Freq", "CRAPome_AvgSC")])
+```
+
+Note this CRAPome is built from AP-MS controls, not proximity-labeling ones:
+endogenously biotinylated carboxylases (PC, PCCA, MCCC1) sit just under the
+0.2 cutoff (~13-20% of runs), so your own Mock samples remain the primary
+control for streptavidin background.
+
+## Step 8 - Call consensus DEPs (`call_deps`)
 
 This walkthrough covers the **intensity branch** only
 (`run_pl_dea()`/`call_deps()`), matching `example_NegKTSwt_vs_Mock.R`
