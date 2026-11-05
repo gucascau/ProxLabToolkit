@@ -34,7 +34,8 @@ run_dep_package <- function(intens_raw, spec, imputation_rowmax = 0.9) {
 
   data_se <- make_se(deg_intens, lfq_cols, experimental_design)
   data_norm <- normalize_vsn(data_se)
-  data_imp_knn <- DEP::impute(data_norm, fun = "knn", rowmax = imputation_rowmax)
+  # colmax = 1: as in impute_mixed(), let sparse (> 80 % missing) controls through
+  data_imp_knn <- DEP::impute(data_norm, fun = "knn", rowmax = imputation_rowmax, colmax = 1)
   data_diff <- DEP::test_diff(data_imp_knn, type = "all")
   dep <- add_rejections(data_diff, alpha = 0.05, lfc = 0)
   res <- get_results(dep)

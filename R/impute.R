@@ -24,7 +24,10 @@ classify_mnar <- function(mat, cond) {
 impute_mixed <- function(mat, cond, q = 0.01, tune_sigma = 1, seed = 1000000) {
   mnar <- classify_mnar(mat, cond)
 
-  mar_knn <- impute::impute.knn(mat)$data
+  # colmax = 1: impute.knn() otherwise stops when any sample is > 80 % missing,
+  # which happens for sparse controls after filtering on the bait (values for
+  # samples under the limit are unchanged)
+  mar_knn <- impute::impute.knn(mat, colmax = 1)$data
 
   set.seed(seed)
   mnar_minprob <- imputeLCMD::impute.MinProb(mat, q = q, tune.sigma = tune_sigma)

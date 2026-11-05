@@ -21,7 +21,10 @@ library(dplyr)
 #' crapome (a pre-loaded load_crapome() table, takes precedence over
 #' crapome_path), crapome_freq_cutoff (CRAPome_Flag = TRUE when found in at
 #' least this fraction of CRAPome controls). Flagging is annotation only -
-#' no protein is ever removed on CRAPome evidence.
+#' no protein is ever removed on CRAPome evidence. reuse_methods (character
+#' vector, e.g. c("Limma", "ROTS")): skip the DEA methods and reload their
+#' <out_dir>/<method>/<name>__<method>_results.csv from an earlier run, to
+#' redo only the consensus, count branch and fusion.
 run_pl_dea <- function(spec, paths, options = list()) {
   opts <- modifyList(list(
     organism = "Homo sapiens",
@@ -57,35 +60,48 @@ run_pl_dea <- function(spec, paths, options = list()) {
   gene_map <- pro[, c("Protein", "Gene")]
 
   results <- list()
-  results$Limma <- run_limma(dat_log_exp, spec)
-  results$ROTS <- run_rots(dat_log_exp, spec, B = opts$rots_B, K = opts$rots_K, seed = opts$rots_seed)
-  results$DEP <- run_dep_package(intens_raw, spec)
-  results$proDA <- run_proda(norm$intens_tran, spec)
-
-  if (!is.null(paths$psm_dir)) {
-    sample_labels <- c(spec$group1_cols, spec$group2_cols)
-    psm <- load_psm_counts(paths$psm_dir, sample_labels)
-    psm <- min_psm_for_comparison(psm, sample_labels)
-    psm <- psm %>% left_join(gene_map, by = "Protein")
-    min_psm_by_gene <- setNames(psm$min_psm, psm$Gene)
-    results$DEqMS <- run_deqms(dat_log_exp, spec, min_psm_by_gene)
+  if (!is.null(opts$reuse_methods)) {
+    # consensus/fusion only: reload each method's table saved by an earlier run
+    for (method in opts$reuse_methods) {
+      results[[method]] <- read.csv(file.path(paths$out_dir, method,
+                                              paste0(spec$name, "__", method, "_results.csv")),
+                                    check.names = FALSE)
+    }
   } else {
-    message("paths$psm_dir not supplied - skipping DEqMS (needs per-sample psm.tsv PSM counts).")
-  }
+    results$Limma <- run_limma(dat_log_exp, spec)
+    results$ROTS <- run_rots(dat_log_exp, spec, B = opts$rots_B, K = opts$rots_K, seed = opts$rots_seed)
+    results$DEP <- run_dep_package(intens_raw, spec)
+    results$proDA <- run_proda(norm$intens_tran, spec)
 
-  if (!is.null(paths$msstats_path)) {
-    msstats_raw <- load_msstats_raw(paths$msstats_path)
-    results$MSstats <- run_msstats(msstats_raw, spec, gene_map)
-  } else {
-    message("paths$msstats_path not supplied - skipping MSstats.")
-  }
+    if (!is.null(paths$psm_dir)) {
+      sample_labels <- c(spec$group1_cols, spec$group2_cols)
+      psm <- load_psm_counts(paths$psm_dir, sample_labels)
+      psm <- min_psm_for_comparison(psm, sample_labels)
+      psm <- psm %>% left_join(gene_map, by = "Protein")
+      min_psm_by_gene <- setNames(psm$min_psm, psm$Gene)
+      psm_cols <- paste0(sample_labels, "_psm")
+      median_psm_by_gene <- setNames(apply(as.data.frame(psm)[, psm_cols, drop = FALSE], 1,
+                                           function(x) median(as.numeric(x))), psm$Gene)
+      # NULL (DEqMS failed even with the median-count fallback) leaves DEqMS out of the consensus
+      results$DEqMS <- run_deqms(dat_log_exp, spec, min_psm_by_gene, median_psm_by_gene)
+    } else {
+      message("paths$psm_dir not supplied - skipping DEqMS (needs per-sample psm.tsv PSM counts).")
+    }
 
-  for (method in names(results)) {
-    method_dir <- file.path(paths$out_dir, method)
-    dir.create(method_dir, showWarnings = FALSE, recursive = TRUE)
-    write.csv(results[[method]],
-              file.path(method_dir, paste0(spec$name, "__", method, "_results.csv")),
-              row.names = FALSE)
+    if (!is.null(paths$msstats_path)) {
+      msstats_raw <- load_msstats_raw(paths$msstats_path)
+      results$MSstats <- run_msstats(msstats_raw, spec, gene_map)
+    } else {
+      message("paths$msstats_path not supplied - skipping MSstats.")
+    }
+
+    for (method in names(results)) {
+      method_dir <- file.path(paths$out_dir, method)
+      dir.create(method_dir, showWarnings = FALSE, recursive = TRUE)
+      write.csv(results[[method]],
+                file.path(method_dir, paste0(spec$name, "__", method, "_results.csv")),
+                row.names = FALSE)
+    }
   }
 
   combined <- combine_pvalues(results)
