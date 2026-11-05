@@ -26,12 +26,34 @@ run_limma <- function(dat_log_exp, spec) {
 #' / min_psm_for_comparison()) as a named vector keyed by Gene, matching
 #' rownames(dat_log_exp). Missing genes get a PSM count of 0 (+1 pseudocount,
 #' as the original pipeline does, since spectraCounteBayes needs count >= 1).
-run_deqms <- function(dat_log_exp, spec, min_psm_by_gene) {
+#' spectraCounteBayes() loess-fits variance vs log(PSM count). When most proteins share the
+#' same minimum count (typical for PL: absent from >= 1 control -> min PSM 0), the fit
+#' degenerates and DEqMS errors ("missing value where TRUE/FALSE needed"). Fallbacks, in
+#' order: minimum PSM (standard), then median PSM across the comparison's samples
+#' (`fallback_psm_by_gene`); if both fail, returns NULL so the caller skips DEqMS.
+run_deqms <- function(dat_log_exp, spec, min_psm_by_gene, fallback_psm_by_gene = NULL) {
   fit3 <- .fit_limma(dat_log_exp, spec)
-  count <- min_psm_by_gene[rownames(fit3$coefficients)]
-  count[is.na(count)] <- 0
-  fit3$count <- count + 1
-  fit4 <- spectraCounteBayes(fit3)
+  fit_with <- function(psm_by_gene) {
+    count <- psm_by_gene[rownames(fit3$coefficients)]
+    count[is.na(count)] <- 0
+    fit3$count <- count + 1
+    spectraCounteBayes(fit3)
+  }
+  fit4 <- tryCatch(fit_with(min_psm_by_gene), error = function(e) {
+    message("DEqMS with minimum PSM count failed (", conditionMessage(e), ")")
+    NULL
+  })
+  if (is.null(fit4) && !is.null(fallback_psm_by_gene)) {
+    message("DEqMS: retrying with median PSM count across samples")
+    fit4 <- tryCatch(fit_with(fallback_psm_by_gene), error = function(e) {
+      message("DEqMS with median PSM count failed (", conditionMessage(e), ")")
+      NULL
+    })
+  }
+  if (is.null(fit4)) {
+    message("DEqMS skipped for ", spec$name)
+    return(NULL)
+  }
   # outputResult() keeps limma's ordinary statistics in t/P.Value/adj.P.Val and
   # DEqMS's PSM-count-moderated ones in sca.*. Expose DEqMS's as the standard
   # columns so the consensus uses DEqMS itself rather than a copy of limma.

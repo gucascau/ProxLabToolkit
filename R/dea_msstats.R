@@ -11,7 +11,12 @@ run_msstats <- function(msstats_raw, spec, protein_gene_map) {
   sample_cols <- c(spec$group1_cols, spec$group2_cols)
   raw <- msstats_raw %>%
     mutate(FinalSample = paste0(Condition, "_", BioReplicate)) %>%
-    filter(FinalSample %in% sample_cols)
+    filter(FinalSample %in% sample_cols) %>%
+    # Condition -> comparison group (several control conditions can be pooled into one group),
+    # BioReplicate -> sample, so replicates of different pooled conditions stay distinct
+    mutate(Condition = ifelse(FinalSample %in% spec$group1_cols, spec$group1_name, spec$group2_name),
+           BioReplicate = FinalSample)
+  if (nrow(raw) == 0) stop("no MSstats rows match the comparison's samples")
 
   processed <- dataProcess(raw, logTrans = 2)
 

@@ -5,9 +5,15 @@ library(metap)
 #' Join every method's result table into one wide table, prefixing each
 #' method's columns with its name (e.g. "Limma_logFC") and keyed by a single
 #' `ID` column (Gene symbol - every run_* wrapper in this toolkit already
-#' standardizes on a "Gene" column). Ports PvalueIntegration.Rmd's join logic
-#' (inner_join across all methods - a protein must be callable by every
-#' method to enter the consensus).
+#' standardizes on a "Gene" column).
+#'
+#' The first method (Limma, run on the full filtered + imputed intensity
+#' matrix) defines the protein set; the others are left-joined, so a protein
+#' a method could not test gets NA there and is simply not counted for that
+#' method downstream (every later step skips NA p-values/logFCs). The original
+#' PvalueIntegration.Rmd used inner_join across all methods, which silently
+#' dropped every protein MSstats cannot model - i.e. proteins detected only in
+#' the bait group, often the bait itself and its strongest proximal partners.
 join_method_results <- function(results_list, id_col = "Gene") {
   renamed <- imap(results_list, function(df, method_name) {
     # some methods (e.g. DEP's get_results()) keep their own "ID" column
@@ -20,7 +26,7 @@ join_method_results <- function(results_list, id_col = "Gene") {
     other_cols <- setdiff(colnames(df), "ID")
     df %>% rename_with(~ paste0(method_name, "_", .x), all_of(other_cols))
   })
-  reduce(renamed, function(x, y) inner_join(x, y, by = "ID"))
+  reduce(renamed, function(x, y) left_join(x, y, by = "ID"))
 }
 
 #' Pick, per protein, the logFC with the largest absolute value among the
