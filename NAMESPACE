@@ -1,0 +1,24 @@
+# Hand-maintained (no roxygen). The R/ files also keep their library() calls so that the classic
+# `for (f in list.files("R", full.names = TRUE)) source(f)` workflow keeps working.
+import(stats, except = c(filter, lag))
+import(dplyr)
+import(purrr)
+import(tidyr)
+import(limma)
+import(DEqMS)
+import(proDA)
+import(MSstats)
+import(metap)
+importFrom(utils, read.csv, write.csv)
+importFrom(tibble, rownames_to_column, column_to_rownames, tibble, as_tibble)
+importFrom(data.table, fread, ":=")
+importFrom(DEP, make_se, normalize_vsn, add_rejections, get_results)
+export(comparison_spec, load_fragpipe_protein, load_psm_counts, min_psm_for_comparison, load_peptide_support,
+       min_peptide_support_for_comparison, load_msstats_raw)
+export(load_contaminant_list, filter_contaminants, load_crapome, annotate_crapome)
+export(extract_intensity_matrix, log2_quantile_normalize, classify_mnar, impute_mixed)
+export(run_limma, run_deqms, run_rots, run_proda, run_dep_package, run_msstats)
+export(join_method_results, add_max_logfc, add_combined_pvalues, add_corrected_fisher, add_vote_counts,
+       combine_pvalues, call_deps, call_deps_vote)
+export(extract_count_matrix, fit_saint_style_mixture, run_count_branch, to_posterior, fuse_branches)
+export(run_pl_dea, run_pl_interactome)
