@@ -1,0 +1,21 @@
+Package: ProxLabToolkit
+Type: Package
+Title: Calibrated Differential Enrichment Analysis for Proximity-Labelling Proteomics
+Version: 1.0.0
+Authors@R: person("Xin", "Wang", email = "xin.wang@nationwidechildrens.org", role = c("aut", "cre"))
+Description: Consensus differential-enrichment analysis for proximity-labelling (BioID, TurboID, miniTurbo, APEX)
+    mass-spectrometry data. Runs several statistical methods (limma, DEqMS, ROTS, proDA, DEP, MSstats) on one
+    normalised matrix with detection-limit-aware imputation, combines them with a correlation-corrected Fisher
+    statistic so that error rates stay calibrated, and fuses intensity and spectral-count evidence into a
+    per-protein score.
+License: file LICENSE
+Encoding: UTF-8
+Depends: R (>= 4.3)
+Imports: stats, utils, dplyr, purrr, tidyr, tibble, data.table, readr, limma, DEqMS, ROTS, proDA, DEP, MSstats,
+    metap, impute, imputeLCMD, MsCoreUtils
+Suggests: qvalue, knitr, rmarkdown
+biocViews: Proteomics, MassSpectrometry, DifferentialExpression, Software
+URL: https://github.com/gucascau/ProxLabToolkit
+BugReports: https://github.com/gucascau/ProxLabToolkit/issues
+Collate: 'load_data.R' 'contaminants.R' 'preprocess.R' 'impute.R' 'dea_matrix_methods.R' 'dea_proda.R'
+    'dea_dep_package.R' 'dea_msstats.R' 'consensus.R' 'count_model.R' 'fusion.R' 'run_pipeline.R'

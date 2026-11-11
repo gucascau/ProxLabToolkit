@@ -1,0 +1,453 @@
+---
+title: "ProxLabToolkit: statistical methods"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    number_sections: false
+vignette: >
+  %\VignetteIndexEntry{ProxLabToolkit: statistical methods}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+<!--
+AUTHOR NOTES (not rendered). Resolve before release:
+1. Fusion: to_posterior() is given BH-adjusted P values (FinaladjP_FisherCorrected); qvalue expects raw P values.
+   Described as implemented in "Intensity posterior" below. If the code changes, update eq. (16) and that paragraph.
+2. Kost-McDermott: the code plugs the correlation of the -2 ln p terms into the polynomial in eq. (4), which was
+   derived for the correlation of the underlying test statistics. Described as implemented below. If switched to
+   c = 4 * rho, update eq. (4) and the worked example.
+3. VignetteBuilder: add "VignetteBuilder: knitr" to DESCRIPTION (knitr and rmarkdown are already in Suggests).
+4. Add the paper citation to "How to cite" once published.
+-->
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+This vignette describes what ProxLabToolkit computes, step by step. Each step names the function that implements it,
+the arguments that control it and the output columns it produces, so that results can be traced back to the
+equations. For installation and a worked example, see the `README` and `Examples/Tutorials.Rmd`.
+
+# Overview
+
+ProxLabToolkit scores one proximity-labelling comparison at a time: the replicate runs of a bait (group 1) against the
+replicate runs of its matched controls (group 2). It has two branches.
+
+| Branch | Input | Model | Main output |
+|---|---|---|---|
+| Intensity | MaxLFQ intensities | six differential-abundance tests, combined by a correlation-corrected Fisher statistic | `FinaladjP_FisherCorrected`, `max_logFC` |
+| Spectral count | total spectral counts | two-component negative-binomial mixture fitted by EM | `P_count` |
+| Fusion | both branches | product of posterior odds | `Fused_Score`, `Evidence` |
+
+`run_pl_dea()` runs the intensity branch. `run_pl_interactome()` runs both branches and the fusion.
+
+**Notation.** *i* indexes proteins, *j* indexes methods and *r* indexes runs. *B* and *C* are the sets of bait and
+control runs.
+
+# 1. Input and pre-processing
+
+**Functions:** `load_fragpipe_protein()`, `extract_intensity_matrix()`, `log2_quantile_normalize()`.
+
+1. **Load.** `combined_protein.csv` from FragPipe is restricted to one organism (`options$organism`, default
+   `"Homo sapiens"`). Protein groups sharing a gene symbol are collapsed to the group with the highest total MaxLFQ
+   intensity; the UniProt entry name is used when the gene symbol is blank.
+2. **Optional contaminant removal.** If `paths$contaminant_list_path` or `options$contaminants` is given, those genes
+   are removed. CRAPome information (`paths$crapome_path`) is used for annotation only and never removes proteins
+   (section 7).
+3. **Missing-value filter.** For the comparison's runs, zero intensities are set to missing. Proteins with more than
+   `spec$max_na` missing values are removed. Setting `max_na` to the number of control runs keeps proteins seen in
+   every bait run but in no control run, which are often the strongest proximal proteins.
+4. **Normalization.** Intensities are log2-transformed and quantile-normalized across the comparison's runs
+   (`limma::normalizeBetweenArrays(method = "quantile")`). The log2 matrix before normalization is kept for proDA.
+
+# 2. Missing values
+
+**Function:** `impute_mixed(mat, cond, q = 0.01, tune_sigma = 1, seed = 1e6, rule = "partial_mnar")`.
+**Options:** `options$impute_rule`, `options$impute_seed`.
+
+Missing values are classified per protein and per group, and imputed on the quantile-normalized matrix.
+
+| Pattern | Treated as | Imputed by |
+|---|---|---|
+| missing in every run of one group | below detection limit (MNAR) | MinProb |
+| *(`partial_mnar` only)* complete in one group and missing in at least half, but not all, of the other group's runs | below detection limit in that group | MinProb |
+| any other gap | missing at random (MAR) | *k*-nearest neighbours |
+
+- **MinProb** (`imputeLCMD::impute.MinProb`): random draws around the lower `q` quantile (1%) of each run's
+  intensities, with spread set by `tune_sigma`. It is applied to the full matrix in its native orientation. The DEP
+  wrapper (`DEP::impute(fun = "mixed")`) is deliberately not used because it transposes the matrix and computes the
+  reference distribution across proteins rather than across runs.
+- ***k*-nearest neighbours** (`impute::impute.knn`, `colmax = 1`).
+- **Why `partial_mnar`.** A protein consistently labelled by the bait and only sporadically detected in controls
+  shows exactly this pattern. Filling the control gaps from neighbours detected in those runs shrinks its fold
+  change. `rule = "mixed"` reproduces the earlier behaviour without this rule.
+
+# 3. Intensity-based tests
+
+**Functions:** `run_limma()`, `run_deqms()`, `run_rots()`, `run_proda()`, `run_dep_package()`, `run_msstats()`.
+
+All tests use the contrast group 1 − group 2, so positive log2 fold changes mean enrichment with the bait.
+
+| Method | Input | Notes | Requires |
+|---|---|---|---|
+| limma | normalized, imputed matrix | moderated *t*-test (`lmFit`, `contrasts.fit`, `eBayes`) | — |
+| DEqMS | normalized, imputed matrix + PSM counts | limma fit with variance modelled against the minimum PSM count per protein (+1); falls back to the median PSM count if that fit fails, and is skipped if both fail | `paths$psm_dir` |
+| ROTS | normalized, imputed matrix | `B = options$rots_B` (10,000) bootstrap resamples, top list size `K = options$rots_K` (500), seed `options$rots_seed` (1,234) | — |
+| proDA | log2 matrix, no imputation | models intensity-dependent missingness itself, after its own median normalization | — |
+| DEP | raw intensities | native DEP workflow: variance-stabilizing normalization, *k*-NN imputation, limma-based test | — |
+| MSstats | feature-level intensities | `dataProcess` (log2) and `groupComparison`; all control conditions pooled into one group | `paths$msstats_path` |
+
+Results are joined by gene symbol. The protein set is defined by limma, which tests every protein that passed the
+missing-value filter. A protein that another method cannot test (for example, a protein seen only in bait runs, which
+MSstats cannot model) is kept, and that method's columns are `NA`; it then contributes no *P* value for that protein.
+
+**Output:** one table per method, `<out_dir>/<Method>/<name>__<Method>_results.csv`. Previously computed method
+tables can be reused with `options$reuse_methods`.
+
+# 4. Correlation-corrected consensus
+
+**Function:** `combine_pvalues()`, which calls `add_max_logfc()`, `add_combined_pvalues()`, `add_corrected_fisher()`
+and `add_vote_counts()`.
+
+All six methods analyse the same measurements, so their *P* values are positively correlated. Fisher's method assumes
+independence and is then anti-conservative: it reports more significance than the data support. ProxLabToolkit uses
+the correction of Kost and McDermott (2002), which compares Fisher's statistic with a scaled $\chi^2$ distribution whose
+mean and variance take the correlation into account.
+
+## Fisher's statistic
+
+For protein *i*, let $p_{ij}$ be the unadjusted *P* value from method *j* (column `<Method>_P.Value`) and $k_i$ the number
+of methods that tested the protein. Then
+
+$$
+T_i = \sum_{j=1}^{k_i} X_{ij}, \qquad X_{ij} = -2\ln p_{ij}. \tag{1}
+$$
+
+Under the null hypothesis each $X_{ij}$ follows $\chi^2_2$ (mean 2, variance 4), so
+
+$$
+\mathrm{E}(T_i) = 2k_i, \qquad
+\mathrm{Var}(T_i) = 4k_i + 2\sum_{j<l}\mathrm{Cov}(X_{ij}, X_{il}). \tag{2}
+$$
+
+If the methods were independent, the covariances would be zero and $T_i \sim \chi^2_{2k_i}$. This uncorrected test is
+reported as `FinalP_Fisher`.
+
+## Correlation between methods
+
+The correlation is estimated once per comparison, from all its proteins. For each pair of methods $(j, l)$, $r_{jl}$ is
+the Pearson correlation of $X_{\cdot j}$ and $X_{\cdot l}$ over the proteins tested by both. The average over the
+$\binom{m}{2}$ pairs of the *m* methods run is clamped to $[0, 0.9]$, the range in which the approximation below holds:
+
+$$
+\bar{\rho} = \min\left\{0.9,\ \max\left(0,\ \frac{1}{\binom{m}{2}}\sum_{j<l} r_{jl}\right)\right\}. \tag{3}
+$$
+
+Each pairwise covariance is approximated by Kost and McDermott's polynomial
+
+$$
+c(\bar{\rho}) = 3.263\,\bar{\rho} + 0.710\,\bar{\rho}^{2} + 0.027\,\bar{\rho}^{3}, \tag{4}
+$$
+
+so that
+
+$$
+\mathrm{Var}(T_i) = 4k_i + k_i(k_i-1)\,c(\bar{\rho}). \tag{5}
+$$
+
+## Scaled χ² approximation
+
+$T_i$ is approximated by $s_i\,\chi^2_{f_i}$, choosing the scale $s_i$ and degrees of freedom $f_i$ so that its mean
+($s_i f_i$) and variance ($2 s_i^2 f_i$) equal those in equation (2):
+
+$$
+s_i = \frac{\mathrm{Var}(T_i)}{2\,\mathrm{E}(T_i)}, \qquad
+f_i = \frac{2\,\mathrm{E}(T_i)^{2}}{\mathrm{Var}(T_i)}, \qquad
+p_i^{\mathrm{corr}} = \Pr\left(\chi^{2}_{f_i} \ge T_i / s_i\right). \tag{6}
+$$
+
+When $\bar\rho = 0$, $s_i = 1$ and $f_i = 2k_i$, which recovers Fisher's test. As $\bar\rho$ grows, $f_i$ falls and
+$s_i$ rises, so the same $T_i$ gives a larger *P* value. When $k_i = 1$, the single *P* value is used unchanged.
+$p_i^{\mathrm{corr}}$ is reported as `FinalP_FisherCorrected`. Benjamini–Hochberg adjustment across the proteins of the
+comparison gives $q_i$, reported as `FinaladjP_FisherCorrected`.
+
+The effect of the correction, for six methods with average correlation 0.5 and a protein with $p_{ij} = 0.01$ in every
+method:
+
+```{r corrected-fisher-example}
+k   <- 6
+rho <- 0.5
+p   <- rep(0.01, k)
+
+T_stat <- sum(-2 * log(p))
+c_rho  <- 3.263 * rho + 0.710 * rho^2 + 0.027 * rho^3
+var_T  <- 4 * k + k * (k - 1) * c_rho
+E_T    <- 2 * k
+s      <- var_T / (2 * E_T)
+f      <- 2 * E_T^2 / var_T
+
+c(scale = s, df = f,
+  P_uncorrected = pchisq(T_stat, df = 2 * k, lower.tail = FALSE),
+  P_corrected   = pchisq(T_stat / s, df = f, lower.tail = FALSE))
+```
+
+Six moderately correlated tests at *P* = 0.01 carry much less evidence than six independent ones. The uncorrected
+combination treats them as independent and overstates the evidence by several orders of magnitude.
+
+## Effect size and method votes
+
+The effect size of each protein is the log2 fold change with the largest absolute value among the methods:
+
+$$
+\mathrm{max\_logFC}_i = \mathrm{LFC}_{i j^{*}}, \qquad j^{*} = \arg\max_{j}\ \lvert \mathrm{LFC}_{ij} \rvert. \tag{7}
+$$
+
+The table also records the number of methods that tested each protein, `n_methods_tested` ($k_i$), and the number
+that called it at their own thresholds, `n_methods_hit`:
+
+$$
+h_i = \sum_j \mathbf{1}\left[\,p_{ij} \le 0.05 \ \text{and}\ \lvert \mathrm{LFC}_{ij} \rvert > 0.25\,\right].
+$$
+
+The thresholds for $h_i$ are the `p_cutoff` and `logfc_cutoff` arguments of `combine_pvalues()`.
+
+## Other combinations
+
+For comparison, the table also reports Stouffer (`FinalP_Stouffer`), Tippett (`FinalP_Tippett`) and an empirical
+permutation version of Fisher (`FinalP_empirical`), each with a Benjamini–Hochberg-adjusted column (`FinaladjP_*`).
+All of them assume independent tests, so we do not recommend using them for calls.
+
+## Calling enriched proteins
+
+**Function:** `call_deps(combined, p_col, logfc_col = "max_logFC", p_cutoff, logfc_cutoff, min_methods)`.
+**Options:** `options$dep_p_col` (`"FinaladjP_FisherCorrected"`), `dep_p_cutoff` (0.05), `dep_logfc_cutoff` (0.25),
+`dep_min_methods` (3).
+
+By default, a protein is called when
+
+$$
+q_i \le 0.05, \qquad \lvert \mathrm{max\_logFC}_i \rvert > 0.25 \qquad \text{and} \qquad h_i \ge 3.
+$$
+
+The criteria can be changed without rerunning the methods, by calling `call_deps()` on `out$combined`. Set
+`min_methods = NULL` to drop the vote criterion.
+
+> **Note.** The fold-change criterion uses the absolute value, so the list also contains proteins *depleted* in the
+> bait runs (`max_logFC < 0`). For proximity partners, keep the rows with `max_logFC > 0`.
+
+**Output:** `<name>__FinalCombinedPvalue_IntegratedMethods.csv` (all proteins) and `<name>__DEPs.csv` (called
+proteins).
+
+# 5. Spectral-count branch
+
+**Functions:** `run_count_branch()`, `fit_saint_style_mixture()`. **Options:** `options$count_model`, a list passed
+to `fit_saint_style_mixture()` (for example `list(max_iter = 200, pi_init = 0.1)`).
+
+The spectral-count branch follows the principle of SAINT (Choi et al. 2011): it learns what background and interactor
+counts look like from all proteins of a comparison, rather than testing each protein in isolation. It is an
+independent implementation, not a reimplementation of SAINT or SAINTexpress, and its scores are not comparable to
+SAINT scores.
+
+## Counts and library size
+
+Let $y_{ir}$ be the total spectral count of protein *i* in run *r* (column `<run>.Total.Spectral.Count`; zero when the
+protein was not observed). Size factors are the run totals divided by their mean over all runs of the comparison:
+
+$$
+\lambda_r = \frac{\sum_i y_{ir}}{\frac{1}{|B|+|C|}\sum_{r'\in B\cup C}\sum_i y_{ir'}}. \tag{8}
+$$
+
+## Expected count without enrichment
+
+The summed bait count of protein *i* is
+
+$$
+Y_i = \sum_{r\in B} y_{ir}. \tag{9}
+$$
+
+The count expected if the protein behaved as in its matched controls (fold change 1), scaled to the library size of
+the bait runs, is
+
+$$
+\mu_i = \left(\sum_{r\in C} y_{ir} + 0.5\right)\frac{\sum_{r\in B}\lambda_r}{\sum_{r\in C}\lambda_r}. \tag{10}
+$$
+
+The pseudocount of 0.5 (argument `pseudocount`) gives proteins absent from every control run a non-zero expectation.
+
+## Mixture model
+
+Each $Y_i$ is drawn either from a background component with mean $\mu_i$, or from an interactor component with mean
+$FC_1\,\mu_i$. The enrichment factor $FC_1$ is shared by all proteins. Both components are negative binomial,
+parameterized by mean $\mu$ and dispersion $\phi$ so that $\mathrm{Var} = \mu + \phi\mu^2$:
+
+$$
+\Pr(Y_i = y) = (1-\pi)\,\mathrm{NB}\left(y;\ \mu_i,\ \phi_0\right) + \pi\,\mathrm{NB}\left(y;\ FC_1\,\mu_i,\ \phi_1\right), \tag{11}
+$$
+
+$$
+\mathrm{NB}(y;\mu,\phi) = \frac{\Gamma(y+\phi^{-1})}{\Gamma(\phi^{-1})\,y!}
+\left(\frac{1}{1+\phi\mu}\right)^{\phi^{-1}}\left(\frac{\phi\mu}{1+\phi\mu}\right)^{y}, \tag{12}
+$$
+
+where $\pi$ is the proportion of interactors.
+
+## EM algorithm
+
+The parameters $(\pi, FC_1, \phi_0, \phi_1)$ are estimated by expectation–maximization.
+
+**E-step.** For each protein, compute the posterior probability that it belongs to the interactor component:
+
+$$
+w_i = \frac{\pi\,\mathrm{NB}(Y_i;\ FC_1\mu_i,\ \phi_1)}
+{\pi\,\mathrm{NB}(Y_i;\ FC_1\mu_i,\ \phi_1) + (1-\pi)\,\mathrm{NB}(Y_i;\ \mu_i,\ \phi_0)}. \tag{13}
+$$
+
+**M-step.** Update the mixing proportion and the enrichment factor ($n$ is the number of proteins):
+
+$$
+\pi \leftarrow \min\left\{0.9,\ \max\left(10^{-4},\ \frac{1}{n}\sum_i w_i\right)\right\}, \qquad
+FC_1 \leftarrow \max\left(1.01,\ \frac{\sum_i w_i\,Y_i}{\sum_i w_i\,\mu_i}\right). \tag{14}
+$$
+
+Then update each dispersion by a weighted method of moments. The component means are $m_{i0} = \mu_i$ and
+$m_{i1} = FC_1\mu_i$, and the weights are $v_{i0} = 1 - w_i$ and $v_{i1} = w_i$:
+
+$$
+\phi_c \leftarrow \max\left(10^{-4},\ \frac{\hat{V}_c - \hat{M}_c}{\hat{M}_c^{2}}\right), \qquad
+\hat{M}_c = \frac{\sum_i v_{ic}\, m_{ic}}{\sum_i v_{ic}}, \quad
+\hat{V}_c = \frac{\sum_i v_{ic}\,(Y_i - m_{ic})^{2}}{\sum_i v_{ic}}, \quad c\in\{0,1\}. \tag{15}
+$$
+
+**Start and stop.**
+
+| Setting | Value | Argument |
+|---|---|---|
+| initial $\pi$ | 0.1 | `pi_init` |
+| initial $FC_1$ | 4 | `fc1_init` |
+| initial $\phi_0 = \phi_1$ | $\max\{10^{-4}, (\mathrm{Var}(Y) - \overline{\mu})/\overline{\mu}^2\}$ | — |
+| minimum dispersion | $10^{-4}$ | `min_dispersion` |
+| convergence | $\lvert\Delta\pi\rvert + \lvert\Delta FC_1\rvert < 10^{-4}$ | `tol` |
+| maximum iterations | 200 | `max_iter` |
+
+The model is fitted to every protein in the protein table, including proteins with zero counts in this comparison.
+
+## Outputs
+
+`P_count` $= w_i$ at convergence is the count-branch score. `count_logFC`
+$= \log_2[(Y_i + 0.5)/(\mu_i + 0.5)]$ is reported for information.
+
+# 6. Fused score and evidence classes
+
+**Function:** `fuse_branches(count_results, intensity_combined, count_cutoff = 0.75, intensity_p_col =
+"FinaladjP_FisherCorrected", intensity_p_cutoff = 0.05, intensity_logfc_cutoff = 0.25, intensity_min_methods = 3)`.
+**Options in `run_pl_interactome()`:** `count_cutoff`, `intensity_p_cutoff`, `intensity_logfc_cutoff`,
+`dep_min_methods`.
+
+## Intensity posterior
+
+To put the intensity branch on the same probability scale as `P_count`, the values in `intensity_p_col` ($q_i$ by
+default) are converted to posterior probabilities of enrichment with the qvalue package (default settings):
+
+$$
+P_{\mathrm{int},i} = 1 - \mathrm{lfdr}_i, \qquad
+\mathrm{lfdr}_i = \frac{\hat{\pi}_0\, f_0(q_i)}{f(q_i)}. \tag{16}
+$$
+
+Here $\hat{\pi}_0$ is the estimated proportion of null proteins, $f_0$ the null (uniform) density and $f$ the kernel
+estimate of the observed density. If qvalue is not installed, or its estimation fails, $P_{\mathrm{int},i} = 1 - q_i$
+is used and a warning is issued. The result is reported as `intensity_posterior`; `count_posterior` is a copy of
+`P_count`.
+
+## Fusion
+
+Assuming that intensity and spectral counts are conditionally independent given a protein's true status, the two
+posteriors are combined by multiplying their odds (a naive-Bayes product). Both probabilities are first clipped to
+$[\varepsilon, 1 - \varepsilon]$ with $\varepsilon = 10^{-6}$:
+
+$$
+O_i = \frac{P_{\mathrm{count},i}}{1-P_{\mathrm{count},i}} \times \frac{P_{\mathrm{int},i}}{1-P_{\mathrm{int},i}}, \qquad
+\mathrm{Fused\_Score}_i = \frac{O_i}{1+O_i}. \tag{17}
+$$
+
+How to read `Fused_Score`:
+
+- It lies in (0, 1).
+- It is 0.5 when both branches are uninformative, or when they disagree with equal strength.
+- It approaches 1 only when both branches support enrichment.
+- It is computed for proteins present in both branches, and is meant for **ranking**, not as a calibrated
+  probability.
+
+## Evidence classes
+
+Each protein is also classed using each branch's own threshold. It is **intensity-positive** when
+
+$$
+q_i \le 0.05,\quad \lvert \mathrm{max\_logFC}_i \rvert > 0.25 \quad\text{and}\quad h_i \ge 3, \tag{18}
+$$
+
+the same rule as `call_deps()`, and **count-positive** when $P_{\mathrm{count},i} \ge 0.75$.
+
+| | count-positive | not count-positive |
+|---|---|---|
+| **intensity-positive** | `Both` | `Intensity_only` |
+| **not intensity-positive** | `Count_only` | `Neither` |
+
+## Final list in `run_pl_interactome()`
+
+`run_pl_interactome()` rewrites `<name>__DEPs.csv` as the intensity-consensus calls plus the `Count_only` proteins.
+`Count_only` proteins are those the count branch supports confidently but that miss the intensity criteria, for
+example because their MaxLFQ quantification rests on shared peptides. Each row gets a `Confidence` label:
+
+| `Confidence` | Meaning |
+|---|---|
+| `High` | `Evidence == "Both"` |
+| `Standard` | intensity-consensus call without count support |
+| `Count_only` | added on count evidence alone |
+
+Rows are sorted by `Fused_Score`. For the intensity-consensus calls alone, use `call_deps()` on `out$combined`.
+
+# 7. Quality annotations (no filtering)
+
+| Column | Source | Meaning |
+|---|---|---|
+| `min_peptides_per_sample` | `paths$combined_peptide_path` | smallest number of peptides supporting the protein's intensity in any run of the comparison; low values flag intensities resting on few peptides |
+| `CRAPome_*`, `CRAPome_Flag` | `paths$crapome_path` or `options$crapome` | frequency and spectral counts across CRAPome control experiments; `CRAPome_Flag = TRUE` when found in at least `options$crapome_freq_cutoff` (20%) of them |
+
+Neither annotation removes proteins.
+
+# 8. Output files
+
+| File | Rows | Key columns |
+|---|---|---|
+| `<name>__normalized_imputed_matrix.csv` | proteins passing the filter | normalized, imputed log2 intensities |
+| `<Method>/<name>__<Method>_results.csv` | proteins tested by that method | `logFC`, `P.Value` and method-specific columns |
+| `<name>__FinalCombinedPvalue_IntegratedMethods.csv` | proteins passing the filter | `<Method>_logFC`, `<Method>_P.Value`, `max_logFC`, `FinalP_FisherCorrected`, `FinaladjP_FisherCorrected`, `n_methods_tested`, `n_methods_hit`, uncorrected combinations, annotations |
+| `<name>__FusedInteractomeScore.csv` *(interactome only)* | proteins in both branches | `P_count`, `count_logFC`, `count_posterior`, `intensity_posterior`, `Fused_Score`, `Evidence` |
+| `<name>__DEPs.csv` | called proteins | as the combined table; with `run_pl_interactome()`, also the fused columns and `Confidence` |
+
+# 9. Reproducibility
+
+Random steps use fixed seeds: imputation `options$impute_seed` (1,000,000) and ROTS `options$rots_seed` (1,234). The
+empirical permutation *P* value uses seed 123. Results can still differ slightly across versions of the underlying
+packages; record them with `sessionInfo()`.
+
+# How to cite
+
+Please cite ProxLabToolkit (citation to be added on publication) and the methods it runs:
+
+- limma: Ritchie et al. (2015) *Nucleic Acids Res.* 43, e47.
+- DEqMS: Zhu et al. (2020) *Mol. Cell. Proteomics* 19, 1047–1057.
+- ROTS: Suomi et al. (2017) *PLoS Comput. Biol.* 13, e1005562.
+- proDA: Ahlmann-Eltze & Anders (2020) *bioRxiv* 661496.
+- DEP: Zhang et al. (2018) *Nat. Protoc.* 13, 530–550.
+- MSstats: Choi et al. (2014) *Bioinformatics* 30, 2524–2526.
+- imputeLCMD: Lazar et al. (2016) *J. Proteome Res.* 15, 1116–1125.
+- *k*-NN imputation: Troyanskaya et al. (2001) *Bioinformatics* 17, 520–525.
+- qvalue: Storey & Tibshirani (2003) *PNAS* 100, 9440–9445.
+- Correlation-corrected Fisher: Kost & McDermott (2002) *Stat. Probab. Lett.* 60, 183–190.
+- SAINT: Choi et al. (2011) *Nat. Methods* 8, 70–73.
+
+```{r session-info}
+sessionInfo()
+```

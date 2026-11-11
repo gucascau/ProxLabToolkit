@@ -14,7 +14,8 @@ library(dplyr)
 #' full CRAPome matrix export such as Datasets/crapome_reprint-apms.org.csv;
 #' adds CRAPome_* background-frequency columns to the consensus/DEPs tables,
 #' see load_crapome()/annotate_crapome()), out_dir (required).
-#' `options`: organism, rots_B/rots_K/rots_seed, impute_seed, contaminants
+#' `options`: organism, rots_B/rots_K/rots_seed, impute_seed, impute_rule
+#' ("partial_mnar" (default) or "mixed", see impute_mixed()), contaminants
 #' (a pre-loaded character vector, takes precedence over contaminant_list_path),
 #' dep_p_col/dep_p_cutoff/dep_logfc_cutoff/dep_min_methods (passed straight to
 #' call_deps() for the final DEPs list - see its docs in consensus.R),
@@ -22,14 +23,15 @@ library(dplyr)
 #' crapome_path), crapome_freq_cutoff (CRAPome_Flag = TRUE when found in at
 #' least this fraction of CRAPome controls). Flagging is annotation only -
 #' no protein is ever removed on CRAPome evidence. reuse_methods (character
-#' vector, e.g. c("Limma", "ROTS")): skip the DEA methods and reload their
-#' <out_dir>/<method>/<name>__<method>_results.csv from an earlier run, to
-#' redo only the consensus, count branch and fusion.
+#' vector, e.g. c("DEP", "proDA", "MSstats")): reload these methods'
+#' <out_dir>/<method>/<name>__<method>_results.csv from an earlier run instead
+#' of running them; the other methods are run as usual. Listing all of them
+#' redoes only the consensus, count branch and fusion.
 run_pl_dea <- function(spec, paths, options = list()) {
   opts <- modifyList(list(
     organism = "Homo sapiens",
     rots_B = 10000, rots_K = 500, rots_seed = 1234,
-    impute_seed = 1000000,
+    impute_seed = 1000000, impute_rule = "partial_mnar",
     dep_p_col = "FinaladjP_FisherCorrected", dep_p_cutoff = 0.05,
     dep_logfc_cutoff = 0.25, dep_min_methods = 3,
     crapome_freq_cutoff = 0.2
@@ -51,7 +53,8 @@ run_pl_dea <- function(spec, paths, options = list()) {
   norm <- log2_quantile_normalize(intens_raw)
   cond <- c(rep(spec$group1_label, length(spec$group1_cols)),
             rep(spec$group2_label, length(spec$group2_cols)))
-  dat_log_exp <- impute_mixed(norm$intens_tran_normalized, cond, seed = opts$impute_seed)
+  dat_log_exp <- impute_mixed(norm$intens_tran_normalized, cond, seed = opts$impute_seed,
+                              rule = opts$impute_rule)
 
   write.csv(data.frame(Gene = rownames(dat_log_exp), dat_log_exp, check.names = FALSE),
             file.path(paths$out_dir, paste0(spec$name, "__normalized_imputed_matrix.csv")),
@@ -60,19 +63,20 @@ run_pl_dea <- function(spec, paths, options = list()) {
   gene_map <- pro[, c("Protein", "Gene")]
 
   results <- list()
-  if (!is.null(opts$reuse_methods)) {
-    # consensus/fusion only: reload each method's table saved by an earlier run
-    for (method in opts$reuse_methods) {
-      results[[method]] <- read.csv(file.path(paths$out_dir, method,
-                                              paste0(spec$name, "__", method, "_results.csv")),
-                                    check.names = FALSE)
-    }
-  } else {
-    results$Limma <- run_limma(dat_log_exp, spec)
-    results$ROTS <- run_rots(dat_log_exp, spec, B = opts$rots_B, K = opts$rots_K, seed = opts$rots_seed)
-    results$DEP <- run_dep_package(intens_raw, spec)
-    results$proDA <- run_proda(norm$intens_tran, spec)
+  reuse <- opts$reuse_methods
+  for (method in reuse) {
+    # reload each listed method's table saved by an earlier run
+    results[[method]] <- read.csv(file.path(paths$out_dir, method,
+                                            paste0(spec$name, "__", method, "_results.csv")),
+                                  check.names = FALSE)
+  }
+  todo <- function(method) !(method %in% reuse)
+  if (todo("Limma")) results$Limma <- run_limma(dat_log_exp, spec)
+  if (todo("ROTS")) results$ROTS <- run_rots(dat_log_exp, spec, B = opts$rots_B, K = opts$rots_K, seed = opts$rots_seed)
+  if (todo("DEP")) results$DEP <- run_dep_package(intens_raw, spec)
+  if (todo("proDA")) results$proDA <- run_proda(norm$intens_tran, spec)
 
+  if (todo("DEqMS")) {
     if (!is.null(paths$psm_dir)) {
       sample_labels <- c(spec$group1_cols, spec$group2_cols)
       psm <- load_psm_counts(paths$psm_dir, sample_labels)
@@ -87,21 +91,28 @@ run_pl_dea <- function(spec, paths, options = list()) {
     } else {
       message("paths$psm_dir not supplied - skipping DEqMS (needs per-sample psm.tsv PSM counts).")
     }
+  }
 
+  if (todo("MSstats")) {
     if (!is.null(paths$msstats_path)) {
       msstats_raw <- load_msstats_raw(paths$msstats_path)
       results$MSstats <- run_msstats(msstats_raw, spec, gene_map)
     } else {
       message("paths$msstats_path not supplied - skipping MSstats.")
     }
+  }
 
-    for (method in names(results)) {
-      method_dir <- file.path(paths$out_dir, method)
-      dir.create(method_dir, showWarnings = FALSE, recursive = TRUE)
-      write.csv(results[[method]],
-                file.path(method_dir, paste0(spec$name, "__", method, "_results.csv")),
-                row.names = FALSE)
-    }
+  # fixed method order (the consensus does not depend on it, but keeps outputs comparable)
+  ord <- c("Limma", "ROTS", "DEP", "proDA", "DEqMS", "MSstats")
+  results <- results[c(intersect(ord, names(results)), setdiff(names(results), ord))]
+  results <- results[!vapply(results, is.null, logical(1))]
+
+  for (method in setdiff(names(results), reuse)) {
+    method_dir <- file.path(paths$out_dir, method)
+    dir.create(method_dir, showWarnings = FALSE, recursive = TRUE)
+    write.csv(results[[method]],
+              file.path(method_dir, paste0(spec$name, "__", method, "_results.csv")),
+              row.names = FALSE)
   }
 
   combined <- combine_pvalues(results)

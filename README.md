@@ -58,8 +58,8 @@ for that data.
 
 ## Installation
 
-The toolkit is plain sourced `.R` files (no package/DESCRIPTION), but depends
-on several CRAN and Bioconductor packages:
+The toolkit installs as an R package (R >= 4.3, Bioconductor >= 3.20), or can still be used as plain
+sourced `.R` files (see Usage). Either way it depends on several CRAN and Bioconductor packages:
 
 ```r
 install.packages(c(
@@ -75,11 +75,29 @@ BiocManager::install(c(
 ))
 ```
 
+Then install the package from a clone of this repository and run the unit tests:
+
+```bash
+R CMD INSTALL ProxLabToolkit          # or: remotes::install_github("gucascau/ProxLabToolkit")
+Rscript ProxLabToolkit/tests/test_core.R
+```
+
+A container with every dependency pinned to Bioconductor 3.20 is described in `docker/Dockerfile`:
+
+```bash
+docker build -f docker/Dockerfile -t proxlabtoolkit:1.0.0 .
+docker run --rm -v "$PWD":/work -w /work proxlabtoolkit:1.0.0 Rscript Examples/example_NegKTSwt_vs_Mock.R
+```
+
+Runtime: one comparison (3 vs 3 replicates, 2,261 proteins, all six methods + count branch) took
+29 minutes on 4 cores (peak memory 3.5 GB); MSstats is the slowest step.
+
 ## Usage
 
 ```r
-# 1. Source the toolkit
-for (f in list.files("R", pattern = "\\.R$", full.names = TRUE)) source(f)
+# 1. Load the toolkit: library(ProxLabToolkit) if installed, or source the files
+library(ProxLabToolkit)
+# for (f in list.files("R", pattern = "\\.R$", full.names = TRUE)) source(f)
 
 # 2. Define the comparison (which sample columns make up each group)
 spec <- comparison_spec(
@@ -136,7 +154,7 @@ Rscript Examples/example_R467W_vs_Mock.R
 | `load_crapome(path)` / `annotate_crapome(df, crapome, gene_col, freq_cutoff = 0.2)` | Summarise a full CRAPome matrix export (e.g. `Datasets/crapome_reprint-apms.org.csv`) into per-gene detection frequency / spectral counts across control runs, join those onto a result table with a `CRAPome_Flag` (annotation only, nothing is removed). Used automatically by `run_pl_dea()`/`run_pl_interactome()` when `paths$crapome_path` is set. |
 | `extract_intensity_matrix(df, spec)` | Build the intensity matrix for a comparison, filtering by max NA per row. |
 | `log2_quantile_normalize(mat)` | log2 + `limma::normalizeBetweenArrays`. |
-| `classify_mnar()` / `impute_mixed()` | Classify MNAR vs MAR per protein; kNN for MAR, `imputeLCMD::impute.MinProb()` for MNAR (DEP's own `fun="mixed"` is broken for small MNAR subsets — don't use it). |
+| `classify_mnar()` / `impute_mixed()` | Classify MNAR vs MAR per protein; kNN for MAR, `imputeLCMD::impute.MinProb()` for MNAR (DEP's own `fun="mixed"` is broken for small MNAR subsets — don't use it). Default `rule = "partial_mnar"` also treats a group's gaps as below the detection limit when the protein is complete in the other group and missing in at least half of this group's runs (typical of true proximal proteins with sparse controls); `rule = "mixed"` (set via `run_pl_dea(options = list(impute_rule = "mixed"))`) reproduces the earlier behaviour. |
 | `run_limma`, `run_deqms`, `run_rots` | Three DEA methods sharing one imputed matrix + condition vector; each returns a standardized, Gene-keyed table. `run_deqms` needs `load_psm_counts()` and reports DEqMS's PSM-count-moderated statistics (limma's are kept as `limma_*` columns). A Wilcoxon rank-sum test is deliberately not included: with 3 vs 3 replicates its smallest attainable p-value is 0.1. |
 | `run_dep_package(intens_raw, spec)` | DEP-package-native pipeline (`make_se` → `filter_missval` → `normalize_vsn` → impute → `test_diff` → `get_results`). |
 | `run_proda(intens_tran, spec)` | proDA-based DEA on the log2-only (not quantile-normalized) matrix. |
