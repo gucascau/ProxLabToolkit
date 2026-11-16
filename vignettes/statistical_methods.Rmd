@@ -12,13 +12,9 @@ vignette: >
 
 <!--
 AUTHOR NOTES (not rendered). Resolve before release:
-1. Fusion: to_posterior() is given BH-adjusted P values (FinaladjP_FisherCorrected); qvalue expects raw P values.
-   Described as implemented in "Intensity posterior" below. If the code changes, update eq. (16) and that paragraph.
-2. Kost-McDermott: the code plugs the correlation of the -2 ln p terms into the polynomial in eq. (4), which was
-   derived for the correlation of the underlying test statistics. Described as implemented below. If switched to
-   c = 4 * rho, update eq. (4) and the worked example.
-3. VignetteBuilder: add "VignetteBuilder: knitr" to DESCRIPTION (knitr and rmarkdown are already in Suggests).
-4. Add the paper citation to "How to cite" once published.
+1. VignetteBuilder: add "VignetteBuilder: knitr" to DESCRIPTION (knitr and rmarkdown are already in Suggests).
+2. Add the paper citation to "How to cite" once published.
+3. The sensitive-setting numbers (37% -> 46%, 9% -> 15%) are from the local test; update from the full rerun.
 -->
 
 ```{r setup, include = FALSE}
@@ -36,7 +32,7 @@ replicate runs of its matched controls (group 2). It has two branches.
 
 | Branch | Input | Model | Main output |
 |---|---|---|---|
-| Intensity | MaxLFQ intensities | six differential-abundance tests, combined by a correlation-corrected Fisher statistic | `FinaladjP_FisherCorrected`, `max_logFC` |
+| Intensity | MaxLFQ intensities | six differential-abundance tests, combined by a dependence-corrected Fisher statistic | `FinaladjP_FisherCorrected`, `max_logFC` |
 | Spectral count | total spectral counts | two-component negative-binomial mixture fitted by EM | `P_count` |
 | Fusion | both branches | product of posterior odds | `Fused_Score`, `Evidence` |
 
@@ -105,15 +101,16 @@ MSstats cannot model) is kept, and that method's columns are `NA`; it then contr
 **Output:** one table per method, `<out_dir>/<Method>/<name>__<Method>_results.csv`. Previously computed method
 tables can be reused with `options$reuse_methods`.
 
-# 4. Correlation-corrected consensus
+# 4. Dependence-corrected consensus
 
 **Function:** `combine_pvalues()`, which calls `add_max_logfc()`, `add_combined_pvalues()`, `add_corrected_fisher()`
-and `add_vote_counts()`.
+and `add_vote_counts()`. **Argument:** `correction` (`"robust"`, the default; `"brown"` or `"kost"` for comparison).
+**Option in `run_pl_dea()`:** `options$fisher_correction`.
 
 All six methods analyse the same measurements, so their *P* values are positively correlated. Fisher's method assumes
-independence and is then anti-conservative: it reports more significance than the data support. ProxLabToolkit uses
-the correction of Kost and McDermott (2002), which compares Fisher's statistic with a scaled $\chi^2$ distribution whose
-mean and variance take the correlation into account.
+independence and is then anti-conservative: it reports more significance than the data support. ProxLabToolkit
+compares Fisher's statistic with a scaled $\chi^2$ distribution whose mean and variance take the dependence into
+account, and estimates that dependence robustly, so that true interactors do not inflate it.
 
 ## Fisher's statistic
 
@@ -128,33 +125,48 @@ Under the null hypothesis each $X_{ij}$ follows $\chi^2_2$ (mean 2, variance 4),
 
 $$
 \mathrm{E}(T_i) = 2k_i, \qquad
-\mathrm{Var}(T_i) = 4k_i + 2\sum_{j<l}\mathrm{Cov}(X_{ij}, X_{il}). \tag{2}
+\mathrm{Var}(T_i) = 4k_i + 2\sum_{j<l}\mathrm{Cov}(X_{ij}, X_{il}), \tag{2}
 $$
 
-If the methods were independent, the covariances would be zero and $T_i \sim \chi^2_{2k_i}$. This uncorrected test is
-reported as `FinalP_Fisher`.
+summed over the pairs of methods that tested protein *i*. If the methods were independent, the covariances would be
+zero and $T_i \sim \chi^2_{2k_i}$. This uncorrected test is reported as `FinalP_Fisher`.
 
-## Correlation between methods
+## Robust estimate of the dependence between methods
 
-The correlation is estimated once per comparison, from all its proteins. For each pair of methods $(j, l)$, $r_{jl}$ is
-the Pearson correlation of $X_{\cdot j}$ and $X_{\cdot l}$ over the proteins tested by both. The average over the
-$\binom{m}{2}$ pairs of the *m* methods run is clamped to $[0, 0.9]$, the range in which the approximation below holds:
-
-$$
-\bar{\rho} = \min\left\{0.9,\ \max\left(0,\ \frac{1}{\binom{m}{2}}\sum_{j<l} r_{jl}\right)\right\}. \tag{3}
-$$
-
-Each pairwise covariance is approximated by Kost and McDermott's polynomial
+The dependence is estimated per comparison and per pair of methods. Each method's *P* values are converted to normal
+scores, which are standard normal for null proteins:
 
 $$
-c(\bar{\rho}) = 3.263\,\bar{\rho} + 0.710\,\bar{\rho}^{2} + 0.027\,\bar{\rho}^{3}, \tag{4}
+u_{ij} = \Phi^{-1}(p_{ij}). \tag{3}
 $$
 
-so that
+For each pair of methods $(j, l)$, the correlation of the normal scores over the proteins tested by both is estimated
+with the Gnanadesikan–Kettenring estimator (`robust_cor()`), using the median absolute deviation (MAD) as the scale.
+With $\tilde u$ the scores standardized by their median and MAD,
 
 $$
-\mathrm{Var}(T_i) = 4k_i + k_i(k_i-1)\,c(\bar{\rho}). \tag{5}
+\hat\rho_{jl} = \frac{\mathrm{MAD}(\tilde u_{\cdot j} + \tilde u_{\cdot l})^2 - \mathrm{MAD}(\tilde u_{\cdot j} - \tilde u_{\cdot l})^2}
+{\mathrm{MAD}(\tilde u_{\cdot j} + \tilde u_{\cdot l})^2 + \mathrm{MAD}(\tilde u_{\cdot j} - \tilde u_{\cdot l})^2}, \tag{4}
 $$
+
+bounded to $[0, \texttt{max\_rho}]$ (0.95). Because the estimator uses the bulk of the proteins and tolerates up to half of
+them being outlying, strongly enriched true interactors, which have extreme scores in every method, do not inflate it.
+Each covariance then follows from Kost and McDermott's approximation, which maps the correlation of the underlying
+normal statistics to the covariance of the $-2\ln p$ terms:
+
+$$
+\mathrm{Cov}(X_{ij}, X_{il}) \approx c(\hat\rho_{jl}) = 3.263\,\hat\rho_{jl} + 0.710\,\hat\rho_{jl}^{2} + 0.027\,\hat\rho_{jl}^{3}. \tag{5}
+$$
+
+The estimated covariance matrix is attached to the output as `attr(combined, "fisher_correction")`.
+
+**Why robust.** Two alternatives are available for comparison. `correction = "brown"` (the empirical Brown's method)
+uses the sample covariance of the $-2\ln p$ terms over all proteins. True interactors dominate that covariance: on the
+project's spike-in comparisons it reached its upper bound (the six methods treated as one test) in almost every
+comparison, so the correction was most conservative exactly where there was signal. `correction = "kost"` inserts the
+correlation of the $-2\ln p$ terms into equation (5), which expects the correlation of the normal statistics, and
+under-corrects. On the project's null and spike-in comparisons, the robust estimate gave the fewest null comparisons
+with false calls and the highest sensitivity at a fixed number of false calls.
 
 ## Scaled χ² approximation
 
@@ -167,12 +179,12 @@ f_i = \frac{2\,\mathrm{E}(T_i)^{2}}{\mathrm{Var}(T_i)}, \qquad
 p_i^{\mathrm{corr}} = \Pr\left(\chi^{2}_{f_i} \ge T_i / s_i\right). \tag{6}
 $$
 
-When $\bar\rho = 0$, $s_i = 1$ and $f_i = 2k_i$, which recovers Fisher's test. As $\bar\rho$ grows, $f_i$ falls and
-$s_i$ rises, so the same $T_i$ gives a larger *P* value. When $k_i = 1$, the single *P* value is used unchanged.
+When all $\hat\rho = 0$, $s_i = 1$ and $f_i = 2k_i$, which recovers Fisher's test. As the correlations grow, $f_i$
+falls and $s_i$ rises, so the same $T_i$ gives a larger *P* value. When $k_i = 1$, the single *P* value is used unchanged.
 $p_i^{\mathrm{corr}}$ is reported as `FinalP_FisherCorrected`. Benjamini–Hochberg adjustment across the proteins of the
 comparison gives $q_i$, reported as `FinaladjP_FisherCorrected`.
 
-The effect of the correction, for six methods with average correlation 0.5 and a protein with $p_{ij} = 0.01$ in every
+The effect of the correction, for six methods with pairwise correlation 0.5 and a protein with $p_{ij} = 0.01$ in every
 method:
 
 ```{r corrected-fisher-example}
@@ -204,13 +216,14 @@ $$
 $$
 
 The table also records the number of methods that tested each protein, `n_methods_tested` ($k_i$), and the number
-that called it at their own thresholds, `n_methods_hit`:
+that found it enriched at their own thresholds, `n_methods_hit`:
 
 $$
-h_i = \sum_j \mathbf{1}\left[\,p_{ij} \le 0.05 \ \text{and}\ \lvert \mathrm{LFC}_{ij} \rvert > 0.25\,\right].
+h_i = \sum_j \mathbf{1}\left[\,p_{ij} \le 0.05 \ \text{and}\ \mathrm{LFC}_{ij} > 0.25\,\right].
 $$
 
-The thresholds for $h_i$ are the `p_cutoff` and `logfc_cutoff` arguments of `combine_pvalues()`.
+The thresholds for $h_i$ are the `p_cutoff` and `logfc_cutoff` arguments of `combine_pvalues()`; `direction = "both"`
+counts depletion as well.
 
 ## Other combinations
 
@@ -220,21 +233,26 @@ All of them assume independent tests, so we do not recommend using them for call
 
 ## Calling enriched proteins
 
-**Function:** `call_deps(combined, p_col, logfc_col = "max_logFC", p_cutoff, logfc_cutoff, min_methods)`.
+**Function:** `call_deps(combined, p_col, logfc_col = "max_logFC", p_cutoff, logfc_cutoff, min_methods, direction)`.
 **Options:** `options$dep_p_col` (`"FinaladjP_FisherCorrected"`), `dep_p_cutoff` (0.05), `dep_logfc_cutoff` (0.25),
 `dep_min_methods` (3).
 
 By default, a protein is called when
 
 $$
-q_i \le 0.05, \qquad \lvert \mathrm{max\_logFC}_i \rvert > 0.25 \qquad \text{and} \qquad h_i \ge 3.
+q_i \le 0.05, \qquad \mathrm{max\_logFC}_i > 0.25 \qquad \text{and} \qquad h_i \ge 3.
 $$
+
+The threshold of 0.05 follows the convention of other proteomics tools. **Sensitive setting:** `dep_p_cutoff = 0.10`
+(with `intensity_p_cutoff = 0.10` in `run_pl_interactome()`). On the project's spike-in comparisons this raised
+sensitivity from about 37% to 46%, while the fraction of control-versus-control comparisons with any call rose from
+about 9% to 15%.
 
 The criteria can be changed without rerunning the methods, by calling `call_deps()` on `out$combined`. Set
 `min_methods = NULL` to drop the vote criterion.
 
-> **Note.** The fold-change criterion uses the absolute value, so the list also contains proteins *depleted* in the
-> bait runs (`max_logFC < 0`). For proximity partners, keep the rows with `max_logFC > 0`.
+Only proteins enriched over the control are called (`direction = "up"`). `direction = "both"` restores the earlier
+behaviour, which also called proteins depleted in the bait runs.
 
 **Output:** `<name>__FinalCombinedPvalue_IntegratedMethods.csv` (all proteins) and `<name>__DEPs.csv` (called
 proteins).
@@ -340,24 +358,29 @@ $= \log_2[(Y_i + 0.5)/(\mu_i + 0.5)]$ is reported for information.
 # 6. Fused score and evidence classes
 
 **Function:** `fuse_branches(count_results, intensity_combined, count_cutoff = 0.75, intensity_p_col =
-"FinaladjP_FisherCorrected", intensity_p_cutoff = 0.05, intensity_logfc_cutoff = 0.25, intensity_min_methods = 3)`.
+"FinaladjP_FisherCorrected", intensity_raw_p_col = "FinalP_FisherCorrected", intensity_p_cutoff = 0.05,
+intensity_logfc_cutoff = 0.25, intensity_min_methods = 3, direction = "up")`.
 **Options in `run_pl_interactome()`:** `count_cutoff`, `intensity_p_cutoff`, `intensity_logfc_cutoff`,
 `dep_min_methods`.
 
 ## Intensity posterior
 
-To put the intensity branch on the same probability scale as `P_count`, the values in `intensity_p_col` ($q_i$ by
-default) are converted to posterior probabilities of enrichment with the qvalue package (default settings):
+**Function:** `to_posterior()`. To put the intensity branch on the same probability scale as `P_count`, the unadjusted
+corrected *P* values (`intensity_raw_p_col`) are converted to posterior probabilities of enrichment:
 
 $$
 P_{\mathrm{int},i} = 1 - \mathrm{lfdr}_i, \qquad
-\mathrm{lfdr}_i = \frac{\hat{\pi}_0\, f_0(q_i)}{f(q_i)}. \tag{16}
+\mathrm{lfdr}_i = \frac{\hat{\pi}_0\, f_0(p_i^{\mathrm{corr}})}{f(p_i^{\mathrm{corr}})}, \qquad
+\hat\pi_0 = \min\left\{1,\ \frac{\#\{p_i^{\mathrm{corr}} > 0.5\}}{0.5\,n}\right\}. \tag{16}
 $$
 
-Here $\hat{\pi}_0$ is the estimated proportion of null proteins, $f_0$ the null (uniform) density and $f$ the kernel
-estimate of the observed density. If qvalue is not installed, or its estimation fails, $P_{\mathrm{int},i} = 1 - q_i$
-is used and a warning is issued. The result is reported as `intensity_posterior`; `count_posterior` is a copy of
-`P_count`.
+$f_0$ is the null (uniform) density and $f$ the kernel estimate of the observed density (`qvalue::lfdr()`). $\hat\pi_0$,
+the proportion of null proteins, is Storey's estimate at a single $\lambda = 0.5$, bounded below by $1/n$. A fixed
+$\lambda$ is used instead of qvalue's default smoothing over $\lambda$ up to 0.95: corrected *P* values match the null only
+in mean and variance and are sparse near 1, which makes extrapolation towards $\lambda = 1$ underestimate $\hat\pi_0$
+(and fail outright when no *P* value reaches 0.95). If qvalue is not installed, $P_{\mathrm{int},i} = 1 - \mathrm{BH}(p_i^{\mathrm{corr}})$
+is used and a warning is issued. Outputs: `intensity_posterior`, `intensity_pi0` and `intensity_pi0_method`;
+`count_posterior` is a copy of `P_count`.
 
 ## Fusion
 
@@ -377,13 +400,15 @@ How to read `Fused_Score`:
 - It approaches 1 only when both branches support enrichment.
 - It is computed for proteins present in both branches, and is meant for **ranking**, not as a calibrated
   probability.
+- It measures the evidence that a protein differs from the control, not the size of its enrichment; in strongly
+  enriched comparisons many proteins with small fold changes score high.
 
 ## Evidence classes
 
 Each protein is also classed using each branch's own threshold. It is **intensity-positive** when
 
 $$
-q_i \le 0.05,\quad \lvert \mathrm{max\_logFC}_i \rvert > 0.25 \quad\text{and}\quad h_i \ge 3, \tag{18}
+q_i \le 0.05,\quad \mathrm{max\_logFC}_i > 0.25 \quad\text{and}\quad h_i \ge 3, \tag{18}
 $$
 
 the same rule as `call_deps()`, and **count-positive** when $P_{\mathrm{count},i} \ge 0.75$.
@@ -423,7 +448,7 @@ Neither annotation removes proteins.
 | `<name>__normalized_imputed_matrix.csv` | proteins passing the filter | normalized, imputed log2 intensities |
 | `<Method>/<name>__<Method>_results.csv` | proteins tested by that method | `logFC`, `P.Value` and method-specific columns |
 | `<name>__FinalCombinedPvalue_IntegratedMethods.csv` | proteins passing the filter | `<Method>_logFC`, `<Method>_P.Value`, `max_logFC`, `FinalP_FisherCorrected`, `FinaladjP_FisherCorrected`, `n_methods_tested`, `n_methods_hit`, uncorrected combinations, annotations |
-| `<name>__FusedInteractomeScore.csv` *(interactome only)* | proteins in both branches | `P_count`, `count_logFC`, `count_posterior`, `intensity_posterior`, `Fused_Score`, `Evidence` |
+| `<name>__FusedInteractomeScore.csv` *(interactome only)* | proteins in both branches | `P_count`, `count_logFC`, `count_posterior`, `intensity_posterior`, `intensity_pi0`, `intensity_pi0_method`, `Fused_Score`, `Evidence` |
 | `<name>__DEPs.csv` | called proteins | as the combined table; with `run_pl_interactome()`, also the fused columns and `Confidence` |
 
 # 9. Reproducibility
@@ -444,8 +469,10 @@ Please cite ProxLabToolkit (citation to be added on publication) and the methods
 - MSstats: Choi et al. (2014) *Bioinformatics* 30, 2524–2526.
 - imputeLCMD: Lazar et al. (2016) *J. Proteome Res.* 15, 1116–1125.
 - *k*-NN imputation: Troyanskaya et al. (2001) *Bioinformatics* 17, 520–525.
-- qvalue: Storey & Tibshirani (2003) *PNAS* 100, 9440–9445.
-- Correlation-corrected Fisher: Kost & McDermott (2002) *Stat. Probab. Lett.* 60, 183–190.
+- qvalue: Storey & Tibshirani (2003) *PNAS* 100, 9440–9445; π0 at fixed λ: Storey (2002) *J. R. Stat. Soc. B* 64, 479–498.
+- Dependence-corrected Fisher: Kost & McDermott (2002) *Stat. Probab. Lett.* 60, 183–190.
+- Robust correlation: Gnanadesikan & Kettenring (1972) *Biometrics* 28, 81–124.
+- Empirical Brown's method (compared): Brown (1975) *Biometrics* 31, 987–992; Poole et al. (2016) *Bioinformatics* 32, i430–i436.
 - SAINT: Choi et al. (2011) *Nat. Methods* 8, 70–73.
 
 ```{r session-info}
