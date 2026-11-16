@@ -34,6 +34,7 @@ run_pl_dea <- function(spec, paths, options = list()) {
     impute_seed = 1000000, impute_rule = "partial_mnar",
     dep_p_col = "FinaladjP_FisherCorrected", dep_p_cutoff = 0.05,
     dep_logfc_cutoff = 0.25, dep_min_methods = 3,
+    direction = "up", fisher_correction = "robust",
     crapome_freq_cutoff = 0.2
   ), options)
 
@@ -115,7 +116,7 @@ run_pl_dea <- function(spec, paths, options = list()) {
               row.names = FALSE)
   }
 
-  combined <- combine_pvalues(results)
+  combined <- combine_pvalues(results, direction = opts$direction, correction = opts$fisher_correction)
 
   if (!is.null(paths$combined_peptide_path)) {
     sample_labels <- c(spec$group1_cols, spec$group2_cols)
@@ -143,7 +144,8 @@ run_pl_dea <- function(spec, paths, options = list()) {
             row.names = FALSE)
 
   deps <- call_deps(combined, p_col = opts$dep_p_col, p_cutoff = opts$dep_p_cutoff,
-                     logfc_cutoff = opts$dep_logfc_cutoff, min_methods = opts$dep_min_methods)
+                     logfc_cutoff = opts$dep_logfc_cutoff, min_methods = opts$dep_min_methods,
+                     direction = opts$direction)
   write.csv(deps, file.path(paths$out_dir, paste0(spec$name, "__DEPs.csv")),
             row.names = FALSE)
 
@@ -182,7 +184,8 @@ run_pl_interactome <- function(spec, paths, options = list()) {
                           count_cutoff = options$count_cutoff %||% 0.75,
                           intensity_p_cutoff = options$intensity_p_cutoff %||% 0.05,
                           intensity_logfc_cutoff = options$intensity_logfc_cutoff %||% 0.25,
-                          intensity_min_methods = options$dep_min_methods %||% 3)
+                          intensity_min_methods = options$dep_min_methods %||% 3,
+                          direction = options$direction %||% "up")
 
   write.csv(fused, file.path(paths$out_dir, paste0(spec$name, "__FusedInteractomeScore.csv")),
             row.names = FALSE)
